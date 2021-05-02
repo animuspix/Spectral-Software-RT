@@ -4,6 +4,7 @@
 #include <assert.h>
 #endif
 
+#define _USE_MATH_DEFINES
 #include <cmath>
 
 namespace math
@@ -33,6 +34,17 @@ namespace math
          return math::v3(leftMuls.x - rightMuls.x,
                          leftMuls.y - rightMuls.y,
                          leftMuls.z - rightMuls.z);
+      }
+      float magnitude()
+      {
+         return sqrt(x * x + y * y + z * z);
+      }
+      v3 normalized()
+      {
+         float len = magnitude();
+         return v3(x / len,
+                   y / len,
+                   z / len);
       }
    };
    struct m3
@@ -80,9 +92,18 @@ namespace math
    const v3 operator-=(v3 lhs, v3 rhs);
    const v3 operator*(v3 lhs, v3 rhs);
    const v3 operator*=(v3 lhs, v3 rhs);
+   const v3 operator*(v3 lhs, float rhs);
 
    // General functions
    float polyMulBinomial(float x, float a, float b);
    float quadratic(float x, float a, float b, float c, bool inv = true); // All quadratics are assumed to have the form (a - b)^2; additions can be faked by passing negative values for [b]
    float gaussian(float x, float a, float b, float c, float d);
+
+   // Useful constants
+   static constexpr float pi = 3.14159265358979323846f;
+   static constexpr float inv_pi = 1.0f / pi;
+   static constexpr float half_pi = 0.5f * pi;
+   static constexpr float quarter_pi = 0.25f * pi;
+   static constexpr float pi_2 = 2.0f * pi;
+   static constexpr float eps = 0.000001f;
 }

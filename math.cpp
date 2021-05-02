@@ -35,6 +35,13 @@ const math::v3 math::operator*=(math::v3 lhs, math::v3 rhs)
    return lhs * rhs;
 }
 
+const math::v3 math::operator*(v3 lhs, float rhs)
+{
+    return math::v3(lhs.x * rhs,
+                    lhs.y * rhs,
+                    lhs.z * rhs);
+}
+
 float math::polyMulBinomial(float x, float a, float b)
 {
    // (ax [operator] b)^2

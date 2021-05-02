@@ -5,7 +5,9 @@
 #include "math.h"
 #include "sampler.h"
 #include "io.h"
+#include "scene.h"
 
+path* tracing::cameraPaths;
 static uint32_t sample_ctr[parallel::numTiles] = {};
 std::atomic_bool draws_running = true;
 void tracing::trace(int16_t width, int16_t height, int16_t minX, int16_t minY, int16_t tileNdx)
@@ -44,16 +46,29 @@ void tracing::trace(int16_t width, int16_t height, int16_t minX, int16_t minY, i
                camera::tonemap_out(pixel_ndx);
 #elif defined (DEMO_SPECTRAL_INTEGRATION)
                float sample[4];
-               sampler::rand_streams[tileNdx].next(sample);
-               camera::spectrum s(sample[0], 1.0f); // Random spectral sample, going to use a QMC sequence here eventually~
+               sampler::rand_streams[tileNdx].next(sample); // Random spectral sample, should use QMC here
 
-               // Lens sampling + scene traversal will happen here
-               ///////////////////////////////////////////////////
+               // Intersect the scene
+               scene::isect(camera::lens_sample(x, y, sample[0]), cameraPaths + tileNdx, tileNdx);
+               //scene::isect(camera::lens_sample(x, y, sample[0]), lightPaths[tileNdx]);
+
+               // Integrate scene contributions (unidirectional for now)
+               float rho, pdf, rho_weight;
+               cameraPaths[tileNdx].resolve_path_weights(&rho, &pdf, &rho_weight); // Light/camera path merging decisions are performed while we integrate camera paths,
+                                                                                   // so we only need to resolve weights for one batch
+
+               // Apply path probabilitiy into sample weight
+               rho_weight *= pdf;
+
+               // Remove the current path from the backlog for this tile
+               // (BDPT/VCM implementation will delay this until after separately tracing every path)
+               cameraPaths[tileNdx].clear();
+               //lightPaths[tileNdx].clear();
 
                // Compute sensor response + apply sample weight (composite of integration weight for spectral accumulation,
                // lens-sampled filter weight for AA, and path index weights from ray propagation)
                uint32_t pixel_ndx = y * ui::window_width + x;
-               camera::sensor_response(s, pixel_ndx, sample_ctr[tileNdx]);
+               camera::sensor_response(rho, rho_weight, pixel_ndx, sample_ctr[tileNdx]);
 
                // Map resolved sensor responses back into tonemapped RGB valeus we can store for output
                camera::tonemap_out(pixel_ndx);
@@ -71,4 +86,10 @@ void tracing::trace(int16_t width, int16_t height, int16_t minX, int16_t minY, i
 void tracing::stop_tracing()
 {
    draws_running = false;
+}
+
+void tracing::init()
+{
+   // Starting to get awkward doing this for every class that needs memory access - should write an actual linear allocator instead
+   cameraPaths = (path*)((uint8_t)mem::tracing_arena + camera::max_footprint);
 }

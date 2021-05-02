@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 #include <windows.h>
+#undef min
+#undef max
 #include "resource.h"
 
 // should integrate imgui here eventually

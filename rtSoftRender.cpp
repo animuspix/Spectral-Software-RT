@@ -4,18 +4,12 @@
 #include "ui.h"
 #include "camera.h"
 #include <windows.h>
+#undef min
+#undef max
 #include "resource.h"
 #include "parallel.h"
 #include "io.h"
-
-// To-do:
-// - Clean-up matrix math (multiplies look super sketchy)
-// - Tracy integration for profiling
-// - Optimization! Wanting to keep below ~4ms/frame ^^
-// - Simple perspective projection + triangle intersection + continuous surface SPD (possibly sine of distance from triangle centre for cool stripy effects)
-// - Implement a QMC sampler for tracing (not 100% on Sobol, thinking about r2?)
-// - Implement more sophisticated camera sampling (thin lens maybe) + filtering
-// - obj loading + octree/bvh integration for faster intersections
+#include "geometry.h"
 
 #define MAX_LOADSTRING 100
 
@@ -45,6 +39,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // Initialize rendering systems
     mem::init();
     camera::init();
+    tracing::init();
+    geometry::init();
 
     // Launch drawing work
     parallel::launch();
