@@ -1,45 +1,74 @@
 #include "math.h"
 
-const math::v3 math::operator+(math::v3 lhs, math::v3 rhs)
+math::vec<3> math::operator+(math::vec<3> lhs, math::vec<3> rhs)
 {
-   return math::v3(lhs.x + rhs.x,
-                   lhs.y + rhs.y,
-                   lhs.z + rhs.z);
+   return math::vec<3>(lhs.e[0] + rhs.e[0],
+                       lhs.e[1] + rhs.e[1],
+                       lhs.e[2] + rhs.e[2]);
 }
 
-const math::v3 math::operator+=(math::v3 lhs, math::v3 rhs)
+const math::vec<3> math::operator+=(math::vec<3> lhs, math::vec<3> rhs)
 {
-   return v3(lhs.x + rhs.x,
-             lhs.y + rhs.y,
-             lhs.z + rhs.z);
+   return vec<3>(lhs.e[0] + rhs.e[0],
+             lhs.e[1] + rhs.e[1],
+             lhs.e[2] + rhs.e[2]);
 }
 
-const math::v3 math::operator-(math::v3 lhs, math::v3 rhs)
+math::vec<3> math::operator-(math::vec<3> lhs, math::vec<3> rhs)
 {
-   return v3(lhs.x - rhs.x,
-             lhs.y - rhs.y,
-             lhs.z - rhs.z);
+   return vec<3>(lhs.e[0] - rhs.e[0],
+             lhs.e[1] - rhs.e[1],
+             lhs.e[2] - rhs.e[2]);
 }
-const math::v3 math::operator-=(math::v3 lhs, math::v3 rhs)
+const math::vec<3> math::operator-=(math::vec<3> lhs, math::vec<3> rhs)
 {
    return lhs - rhs;
 }
-const math::v3 math::operator*(math::v3 lhs, math::v3 rhs)
+const math::vec<3> math::operator*(math::vec<3> lhs, math::vec<3> rhs)
 {
-   return v3(lhs.x * rhs.x,
-             lhs.y * rhs.y,
-             lhs.z * rhs.z);
+   return vec<3>(lhs.e[0] * rhs.e[0],
+                 lhs.e[1] * rhs.e[1],
+                 lhs.e[2] * rhs.e[2]);
 }
-const math::v3 math::operator*=(math::v3 lhs, math::v3 rhs)
+const math::vec<3> math::operator*=(math::vec<3> lhs, math::vec<3> rhs)
 {
    return lhs * rhs;
 }
 
-const math::v3 math::operator*(v3 lhs, float rhs)
+const math::vec<3> math::operator*(vec<3> lhs, float rhs)
 {
-    return math::v3(lhs.x * rhs,
-                    lhs.y * rhs,
-                    lhs.z * rhs);
+    return math::vec<3>(lhs.e[0] * rhs,
+                    lhs.e[1] * rhs,
+                    lhs.e[2] * rhs);
+}
+
+const math::vec<3> math::operator*=(vec<3> lhs, float rhs)
+{
+    return lhs * rhs;
+}
+
+const math::vec<3> math::operator/(vec<3> lhs, vec<3> rhs)
+{
+    return math::vec<3>(lhs.e[0] / rhs.e[0],
+                        lhs.e[1] / rhs.e[1],
+                        lhs.e[2] / rhs.e[2]);
+}
+
+const math::vec<3> math::operator/=(vec<3> lhs, vec<3> rhs)
+{
+    return lhs / rhs;
+}
+
+const math::vec<3> math::operator/(vec<3> lhs, float rhs)
+{
+    return math::vec<3>(lhs.e[0] / rhs,
+                        lhs.e[1] / rhs,
+                        lhs.e[2] / rhs);
+}
+
+const math::vec<3> math::operator/=(vec<3> lhs, float rhs)
+{
+    return lhs / rhs;
 }
 
 float math::polyMulBinomial(float x, float a, float b)

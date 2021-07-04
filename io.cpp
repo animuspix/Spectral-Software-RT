@@ -5,6 +5,7 @@ std::atomic_bool io::present_switch = false;
 
 // Enable surface present after every tile has resolved
 std::atomic_bool io_running = true;
+std::atomic_bool poll_thread_quit = false;
 void poll()
 {
    while (io_running)
@@ -25,6 +26,7 @@ void poll()
          io::present_switch.store(true);
       }
    }
+   poll_thread_quit = true;
 }
 
 void io::start_polling(std::thread& dest)
@@ -35,4 +37,9 @@ void io::start_polling(std::thread& dest)
 void io::stop_polling()
 {
    io_running = false;
+}
+
+bool io::check_stopped_polling()
+{
+    return poll_thread_quit.load();
 }

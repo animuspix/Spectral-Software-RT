@@ -42,7 +42,7 @@ void tracing::trace(int16_t width, int16_t height, int16_t minX, int16_t minY, i
                camera::analog_colors[y * ui::window_width + x].rho = (sample[0] ^ sample[1] ^ sample[2] ^ sample[3]) / 4294967295.0f;
 #elif defined (DEMO_FILM_RESPONSE) // Rainbow gradient test
                uint32_t pixel_ndx = y * ui::window_width + x;
-               camera::sensor_response(camera::spectrum((float)x / (float)ui::window_width, 1.0f), pixel_ndx, 1.0f);
+               camera::sensor_response((float)x / (float)ui::window_width, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
                camera::tonemap_out(pixel_ndx);
 #elif defined (DEMO_SPECTRAL_INTEGRATION)
                float sample[4];
@@ -91,5 +91,6 @@ void tracing::stop_tracing()
 void tracing::init()
 {
    // Starting to get awkward doing this for every class that needs memory access - should write an actual linear allocator instead
-   cameraPaths = (path*)((uint8_t)mem::tracing_arena + camera::max_footprint);
+   cameraPaths = (path*)mem::allocate_tracing<path>(sizeof(path) * parallel::numTiles);
+   ZeroMemory(cameraPaths, sizeof(path) * parallel::numTiles);
 }

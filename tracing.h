@@ -9,8 +9,8 @@ class tracing
 public:
    struct ray
    {
-      math::v3 dir;
-      math::v3 ori;
+      math::vec<3> dir;
+      math::vec<3> ori;
    };
    static path* cameraPaths; // One reusable path/tile for now, minx * miny expected for VCM
                              // (so we can process each one multiple times against arbitrary light paths)

@@ -17,6 +17,7 @@
                                 // current instance
 WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
 WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
+decltype(camera::digital_colors) backBuf; // Back-buffer for window output (separated from live image output to allow asynchronous rendering/presentation)
 
 // Forward declarations of functions included in this code module:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -58,24 +59,35 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     double last_frame_time = 0.0;
     auto _now = std::chrono::steady_clock::now();
     MSG msg;
+    backBuf = mem::allocate_tracing<RGBQUAD>(camera::digital_colors_footprint);
     while (GetMessage(&msg, nullptr, 0, 0))
     {
+        // Update colors for rendering
+        if (io::present_switch.load())
+        {
+            // Double-buffer output into "backBuf" so we can draw frames without thinking about messages
+            memcpy(backBuf, camera::digital_colors, camera::digital_colors_footprint);
+
+            // Loaded output bits into the backbuffer, so start allowing drawing again on each thread/tile
+            io::present_switch.store(false);
+            for (uint32_t i = 0; i < parallel::numTiles; i++) parallel::drawFinished[i].store(false);
+
+            // Update frame statistics
+            frameCtr++;
+            auto t = std::chrono::steady_clock::now();
+            auto dt = (t - _now).count() / 1000000000.0;
+            last_frame_time = dt; // Clock tick count is in nanoseconds by default, convert down to seconds
+            frameTimeBuffer += dt;
+            avgFrameTime = frameTimeBuffer / frameCtr;
+            _now = t;
+        }
+
+        // Present new colors on window wake/message
         if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
         {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
-            if (io::present_switch.load())
-            {
-               InvalidateRect(ui::hWnd, NULL, false);
-               io::present_switch.store(false);
-               frameCtr++;
-               auto t = std::chrono::steady_clock::now();
-               auto dt = (t - _now).count() / 1000000000.0;
-               last_frame_time = dt; // Clock tick count is in nanoseconds by default, convert down to seconds
-               frameTimeBuffer += dt;
-               avgFrameTime = frameTimeBuffer / frameCtr;
-               _now = t;
-            }
+            InvalidateRect(ui::hWnd, NULL, false);
         }
     }
 
@@ -172,14 +184,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
             uint32_t test = SetDIBitsToDevice(hdc, 0, 0, ui::window_width, ui::window_height, 0, 0, 0, ui::window_height, camera::digital_colors, &ui::bmi, DIB_RGB_COLORS);
-
-            // Loaded output bits into the window surface, so start allowing drawing again on each thread/tile
-            for (uint32_t i = 0; i < parallel::numTiles; i++) parallel::drawFinished[i].store(false);
             EndPaint(hWnd, &ps);
         }
         break;
     case WM_DESTROY:
-        parallel::stop_work();
         PostQuitMessage(0);
         break;
     default:
