@@ -73,6 +73,7 @@ public:
         rnd_v *= rnd_v;
         *out_dir = math::vec<3>(rnd_u, sqrt(1.0f - (rnd_u + rnd_v)), rnd_v).normalized();
         *out_pdf = out_dir->dot(math::vec<3>(0, 1, 0)) / math::pi; // generated ray is in sampling space and sees the normal parallel to y-up
+                                                                   // nDotL *and* div by pi feels super sketchy
                                                                    // ~Fairly sure this evaluates down to just the y-axis of the sampled ray, divided by pi;
                                                                    // kinda feel like testing to make sure before optimizing
     }
