@@ -32,6 +32,6 @@ public:
     // Generic diffuse surface colors until I get imgui working
     static const float placeholder_spd(math::vec<4> coords_and_rho) // [xyz], w (wavelength)
     {
-        return math::quadratic(coords_and_rho.w(), 2.7f, 0.8f, 0.2f, 1.7f); // Debug red :p
+        return 1.0f;//math::gaussian(coords_and_rho.w(), 2.7f, 0.8f, 0.2f, 1.7f); // Debug red :p
     }
 };

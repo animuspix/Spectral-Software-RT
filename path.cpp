@@ -1,8 +1,10 @@
 
 #include "path.h"
+#include <windows.h>
 
 void path::push(path_vt vt)
 {
+    if (front >= capacity) DebugBreak();
     vts[front] = vt;
     front++;
     size++;

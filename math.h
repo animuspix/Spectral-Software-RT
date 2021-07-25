@@ -128,8 +128,8 @@ namespace math
         vec<3> apply(vec<3> v) // matrix x vector product
         {
             return vec<3>(v.dot(X),
-                v.dot(Y),
-                v.dot(Z));
+                          v.dot(Y),
+                          v.dot(Z));
         }
         m3 chain_with(m3 m) // matrix x matrix proeduct for chained transformations
         {
@@ -147,23 +147,30 @@ namespace math
     };
 
     // Linear algebra operators
-    vec<3> operator+(vec<3> lhs, vec<3> rhs);
-    const vec<3> operator+=(vec<3> lhs, vec<3> rhs);
-    vec<3> operator-(vec<3> lhs, vec<3> rhs);
-    const vec<3> operator-=(vec<3> lhs, vec<3> rhs);
+    const vec<3> operator+(vec<3> lhs, vec<3> rhs);
+    const vec<3> operator+=(vec<3>& lhs, vec<3> rhs);
+    const vec<3> operator-(vec<3> lhs, vec<3> rhs);
+    const vec<3> operator-=(vec<3>& lhs, vec<3> rhs);
     const vec<3> operator*(vec<3> lhs, vec<3> rhs);
-    const vec<3> operator*=(vec<3> lhs, vec<3> rhs);
+    const vec<3> operator*=(vec<3>& lhs, vec<3> rhs);
     const vec<3> operator*(vec<3> lhs, float rhs);
-    const vec<3> operator*=(vec<3> lhs, float rhs);
+    const vec<3> operator*=(vec<3>& lhs, float rhs);
     const vec<3> operator/(vec<3> lhs, vec<3> rhs);
-    const vec<3> operator/=(vec<3> lhs, vec<3> rhs);
+    const vec<3> operator/=(vec<3>& lhs, vec<3> rhs);
     const vec<3> operator/(vec<3> lhs, float rhs);
-    const vec<3> operator/=(vec<3> lhs, float rhs);
+    const vec<3> operator/=(vec<3>& lhs, float rhs);
 
     // General functions
     float polyMulBinomial(float x, float a, float b);
     float quadratic(float x, float a, float b, float c, bool inv = true); // All quadratics are assumed to have the form (a - b)^2; additions can be faked by passing negative values for [b]
     float gaussian(float x, float a, float b, float c, float d);
+    m3 normalSpace(vec<3> n); // Generates the matrix mapping the space at a point (where Y is aligned with the normal [n]) into world-space
+    math::vec<3> floor(math::vec<3> v);
+    math::vec<3> ceil(math::vec<3> v);
+    math::vec<3> max(math::vec<3> u, math::vec<3> v);
+    math::vec<3> min(math::vec<3> u, math::vec<3> v);
+    math::vec<3> abs(math::vec<3> v);
+    float sgn(float f);
 
     // Useful constants
     static constexpr float pi = 3.14159265358979323846f;
@@ -195,7 +202,7 @@ namespace math
         }
     };
 
-    // Extension of [op] with captured state
+    // Extension of [fn] with captured state
     template<int dim, maths_type ret>
     struct fn_closure
     {

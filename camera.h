@@ -70,9 +70,9 @@ public:
         // Compose isolated colours into a sensor value, apply accumulated weights
         // (from path-tracing + spectral integration), write to sensor output :)
         sensel& curr_sensel = sensor_grid[ndx]; // Read in current sensor value
-        weight *= 1.0f / 32.0f; // Apply sample weighting into path weight
-        weight *= (sample_num > 32) ? 0.0f : 1.0f; // Super-basic filter scheme, future versions will adapt the filter/integration code I wrote for Athru
-        if (sample_num > 1 && sample_num < 32)
+        weight *= 1.0f / 2048.0f; // Apply sample weighting into path weight
+        weight *= (sample_num > 2048) ? 0.0f : 1.0f; // Super-basic filter scheme, future versions will adapt the filter/integration code I wrote for Athru
+        if (sample_num > 1 && sample_num < 2048)
         {
             curr_sensel.r += rgb.e[0] * weight;
             curr_sensel.g += rgb.e[1] * weight;

@@ -58,6 +58,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     double avgFrameTime = 0.0;
     double last_frame_time = 0.0;
     auto _now = std::chrono::steady_clock::now();
+#ifdef PROFILE
+    constexpr uint32_t dbgOutLen = 64;
+    char dbgOut[dbgOutLen];
+    memset(dbgOut, 0x0, dbgOutLen);
+#endif
     MSG msg;
     backBuf = mem::allocate_tracing<RGBQUAD>(camera::digital_colors_footprint);
     while (GetMessage(&msg, nullptr, 0, 0))
@@ -73,6 +78,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             for (uint32_t i = 0; i < parallel::numTiles; i++) parallel::drawFinished[i].store(false);
 
             // Update frame statistics
+#ifdef PROFILE
             frameCtr++;
             auto t = std::chrono::steady_clock::now();
             auto dt = (t - _now).count() / 1000000000.0;
@@ -80,6 +86,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             frameTimeBuffer += dt;
             avgFrameTime = frameTimeBuffer / frameCtr;
             _now = t;
+            sprintf_s(dbgOut, "last frame time %f \n", last_frame_time);
+            OutputDebugStringA(dbgOut);
+            memset(dbgOut, 0x0, dbgOutLen);
+#endif
         }
 
         // Present new colors on window wake/message
