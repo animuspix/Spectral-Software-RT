@@ -77,7 +77,7 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, uint32_t tileNdx)
                 neighbour_1 = n1 + uvw_i;
                 if (neighbour_0.x() > geometry::vol::width || neighbour_0.x() < 0 ||
                     neighbour_0.y() > geometry::vol::width || neighbour_0.y() < 0 ||
-                    neighbour_0.z() > geometry::vol::width || neighbour_0.z() < 0)
+                    neighbour_0.z() > geometry::vol::width || neighbour_0.z() < 0) // Can probably replace these tests with [geometry::vol::cell_validity(...)]
                 {
                     // Zeroth neighbour lies outside the volume, zeroth candidate normal is safe to use
                     // Future versions will perform an occupancy test here

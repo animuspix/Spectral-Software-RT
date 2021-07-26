@@ -193,3 +193,9 @@ float math::sgn(float f)
 {
     return std::signbit(f) ? -1.0f : 1.0f;
 }
+
+bool math::eps_equality(float x, float y)
+{
+    return x >= (y - eps) &&
+           x <= (y + eps);
+}

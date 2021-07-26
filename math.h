@@ -171,6 +171,7 @@ namespace math
     math::vec<3> min(math::vec<3> u, math::vec<3> v);
     math::vec<3> abs(math::vec<3> v);
     float sgn(float f);
+    bool eps_equality(float x, float y);
 
     // Useful constants
     static constexpr float pi = 3.14159265358979323846f;
