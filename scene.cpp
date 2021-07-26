@@ -24,8 +24,7 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, uint32_t tileNdx)
         geometry::vol::vol_nfo* volume_nfo;
         if (geometry::test(curr_ray.dir, &curr_ray.ori, &volume_nfo))
         {
-            // Resolve intersection cell & normal; no handling for sparse volumes atm, considering a combination of occupancy bits and euclidean surface distances in 0...128 (cell units)
-            // (replacing edge fuzz, and allowing easy editing + efficient SDF marching while keeping one byte/cell)
+            // Resolve intersection cell & normal; no handling for sparse volumes atm, need to finish implementing my octree ^_^'
             ////////////////////////////////////////
 
             // Resolve intersection cell
