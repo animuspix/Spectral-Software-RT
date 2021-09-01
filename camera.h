@@ -94,11 +94,11 @@ public:
         // https://www.shadertoy.com/view/WdjSW3
         // originally Narkowicz 2015, "ACES Filmic Tone Mapping Curve"
         auto aces = [](float x) {
-            const float a = 2.51;
-            const float b = 0.03;
-            const float c = 2.43;
-            const float d = 0.59;
-            const float e = 0.14;
+            const float a = 2.51f;
+            const float b = 0.03f;
+            const float c = 2.43f;
+            const float d = 0.59f;
+            const float e = 0.14f;
             return (x * (a * x + b)) / (x * (c * x + d) + e);
         };
         sensel sensor_v = sensor_grid[ndx];

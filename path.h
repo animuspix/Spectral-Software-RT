@@ -27,6 +27,7 @@ public:
     void push(path_vt vt); // Pass a vertex into the current path
     void resolve_path_weights(float* rho_out, float* pdf_out, float* response_out);
     void clear();
-    static constexpr uint16_t capacity = 32; // At most 32 bounces/ray
+    static constexpr uint16_t capacity = 1734; // Our volume grid contains 1024x1024x1024 voxels; in the worst case, a volume with continuously-varying IOR will
+                                               // allow rays to walk through 1734 cells (top-right to bottom-left corner)
     path_vt vts[capacity];
 };

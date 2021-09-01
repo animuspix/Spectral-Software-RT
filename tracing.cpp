@@ -8,6 +8,7 @@
 #include "scene.h"
 
 path* tracing::cameraPaths;
+float* tracing::isosurf_distances;
 static uint32_t sample_ctr[parallel::numTiles] = {};
 std::atomic_bool draws_running = true;
 void tracing::trace(int16_t width, int16_t height, int16_t minX, int16_t minY, int16_t tileNdx)
@@ -24,32 +25,47 @@ void tracing::trace(int16_t width, int16_t height, int16_t minX, int16_t minY, i
          {
             for (int32_t x = minX; x < xMax; x++)
             {
-               // Tracing output ends with "analog" writes
-#define DEMO_SPECTRAL_INTEGRATION
+                // Core path integrator, + demo effects
+#define DEMO_SPECTRAL_PT
 //#define DEMO_FILM_RESPONSE
+//#define DEMO_XOR
+//#define DEMO_NOISE
+//#define DEMO_AND
+//#define DEMO_HYPERBOLA
 #ifdef DEMO_HYPERBOLA
                float distX = ((float)abs(abs(x - ui::image_centre_x) - ui::image_centre_x)) / (float)ui::image_centre_x;
                float distY = ((float)abs(abs(y - ui::image_centre_y) - ui::image_centre_y)) / (float)ui::image_centre_y;
                float dist = 1.0f - sqrt(distX * distX + distY * distY);
-               camera::analog_colors[y * ui::window_width + x].rho = dist;
+               uint32_t pixel_ndx = y * ui::window_width + x;
+               camera::sensor_response(dist, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
+               camera::tonemap_out(pixel_ndx);
 #elif defined(DEMO_AND)
-               camera::analog_colors[y * ui::window_width + x].rho = (x & y) / (float)y;
+               float rho = (x & y) / (float)y;
+               uint32_t pixel_ndx = y * ui::window_width + x;
+               camera::sensor_response(rho, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
+               camera::tonemap_out(pixel_ndx);
 #elif defined(DEMO_XOR)
-               camera::analog_colors[y * ui::window_width + x].rho = ((x % 1024) ^ (y % 1024)) / 1024.0f;
+               float rho = ((x % 1024) ^ (y % 1024)) / 1024.0f;
+               uint32_t pixel_ndx = y * ui::window_width + x;
+               camera::sensor_response(rho, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
+               camera::tonemap_out(pixel_ndx);
 #elif defined(DEMO_NOISE)
-               uint32_t sample[4];
+               float sample[4];
                sampler::rand_streams[tileNdx].next(sample); // Three wasted values :(
-               camera::analog_colors[y * ui::window_width + x].rho = (sample[0] ^ sample[1] ^ sample[2] ^ sample[3]) / 4294967295.0f;
+               uint32_t pixel_ndx = y * ui::window_width + x;
+               camera::sensor_response(sample[0], 1.0f, pixel_ndx, sample_ctr[tileNdx]);
+               camera::tonemap_out(pixel_ndx);
 #elif defined (DEMO_FILM_RESPONSE) // Rainbow gradient test
                uint32_t pixel_ndx = y * ui::window_width + x;
                camera::sensor_response((float)x / (float)ui::window_width, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
                camera::tonemap_out(pixel_ndx);
-#elif defined (DEMO_SPECTRAL_INTEGRATION)
+#elif defined (DEMO_SPECTRAL_PT)
                float sample[4];
                sampler::rand_streams[tileNdx].next(sample); // Random spectral sample, should use QMC here
 
                // Intersect the scene
-               scene::isect(camera::lens_sample(x, y, sample[0]), cameraPaths + tileNdx, tileNdx);
+               uint32_t pixel_ndx = y * ui::window_width + x;
+               scene::isect(camera::lens_sample((float)x, (float)y, sample[0]), cameraPaths + tileNdx, isosurf_distances + pixel_ndx, tileNdx);
                //scene::isect(camera::lens_sample(x, y, sample[0]), lightPaths[tileNdx]);
 
                // Integrate scene contributions (unidirectional for now)
@@ -60,6 +76,8 @@ void tracing::trace(int16_t width, int16_t height, int16_t minX, int16_t minY, i
                // Apply path probabilitiy into sample weight
                rho_weight *= pdf;
 
+               //if (cameraPaths[tileNdx].front > 0) DebugBreak();
+
                // Remove the current path from the backlog for this tile
                // (BDPT/VCM implementation will delay this until after separately tracing every path)
                cameraPaths[tileNdx].clear();
@@ -67,7 +85,6 @@ void tracing::trace(int16_t width, int16_t height, int16_t minX, int16_t minY, i
 
                // Compute sensor response + apply sample weight (composite of integration weight for spectral accumulation,
                // lens-sampled filter weight for AA, and path index weights from ray propagation)
-               uint32_t pixel_ndx = y * ui::window_width + x;
                camera::sensor_response(rho, rho_weight, pixel_ndx, sample_ctr[tileNdx]);
 
                // Map resolved sensor responses back into tonemapped RGB valeus we can store for output
@@ -90,7 +107,11 @@ void tracing::stop_tracing()
 
 void tracing::init()
 {
-   // Starting to get awkward doing this for every class that needs memory access - should write an actual linear allocator instead
-   cameraPaths = (path*)mem::allocate_tracing<path>(sizeof(path) * parallel::numTiles);
+   cameraPaths = mem::allocate_tracing<path>(sizeof(path) * parallel::numTiles);
    ZeroMemory(cameraPaths, sizeof(path) * parallel::numTiles);
+   isosurf_distances = (float*)mem::allocate_tracing<float>(sizeof(float) * ui::window_area); // Eventually this will be per-subpixel instead of per-macropixel, but I'm not quite up to adding AA yet
+   for (uint32_t i : countRange(0u, ui::window_area))
+   {
+       isosurf_distances[i] = -1.0f; // Reserve zero distance for voxels directly facing a grid boundary
+   }
 }

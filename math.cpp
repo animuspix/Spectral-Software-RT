@@ -77,6 +77,222 @@ const math::vec<3> math::operator/=(vec<3>& lhs, float rhs)
     return lhs;
 }
 
+const bool math::anyGreater(vec<3> lhs, vec<3> rhs)
+{
+    return lhs.e[0] > rhs.e[0] ||
+           lhs.e[1] > rhs.e[1] ||
+           lhs.e[2] > rhs.e[2];
+}
+
+const bool math::anyLesser(vec<3> lhs, vec<3> rhs)
+{
+    return lhs.e[0] < rhs.e[0] ||
+           lhs.e[1] < rhs.e[1] ||
+           lhs.e[2] < rhs.e[2];
+}
+
+const bool math::anyEqual(vec<3> lhs, vec<3> rhs)
+{
+    return lhs.e[0] == rhs.e[0] ||
+           lhs.e[1] == rhs.e[1] ||
+           lhs.e[2] == rhs.e[2];
+}
+
+const bool math::allGreater(vec<3> lhs, vec<3> rhs)
+{
+    return lhs.e[0] > rhs.e[0] &&
+           lhs.e[1] > rhs.e[1] &&
+           lhs.e[2] > rhs.e[2];
+}
+
+const bool math::allLesser(vec<3> lhs, vec<3> rhs)
+{
+    return lhs.e[0] < rhs.e[0] &&
+           lhs.e[1] < rhs.e[1] &&
+           lhs.e[2] < rhs.e[2];
+}
+
+const bool math::allEqual(vec<3> lhs, vec<3> rhs)
+{
+    return lhs.e[0] == rhs.e[0] &&
+           lhs.e[1] == rhs.e[1] &&
+           lhs.e[2] == rhs.e[2];
+}
+
+const bool math::anyGreater(vec<3> lhs, float rhs)
+{
+    return lhs.e[0] > rhs &&
+           lhs.e[1] > rhs &&
+           lhs.e[2] > rhs;
+}
+const bool math::anyLesser(vec<3> lhs, float rhs)
+{
+    return lhs.e[0] < rhs &&
+           lhs.e[1] < rhs &&
+           lhs.e[2] < rhs;
+}
+const bool math::anyEqual(vec<3> lhs, float rhs)
+{
+    return lhs.e[0] == rhs &&
+           lhs.e[1] == rhs &&
+           lhs.e[2] == rhs;
+}
+const bool math::allGreater(vec<3> lhs, float rhs)
+{
+    return lhs.e[0] > rhs &&
+           lhs.e[1] > rhs &&
+           lhs.e[2] > rhs;
+}
+const bool math::allLesser(vec<3> lhs, float rhs)
+{
+    return lhs.e[0] < rhs &&
+           lhs.e[1] < rhs &&
+           lhs.e[2] < rhs;
+}
+const bool math::allEqual(vec<3> lhs, float rhs)
+{
+    return lhs.e[0] == rhs &&
+           lhs.e[1] == rhs &&
+           lhs.e[2] == rhs;
+}
+
+const math::vec<2> math::operator+(math::vec<2> lhs, math::vec<2> rhs)
+{
+    return math::vec<2>(lhs.e[0] + rhs.e[0],
+                        lhs.e[1] + rhs.e[1]);
+}
+
+const math::vec<2> math::operator+=(math::vec<2>& lhs, math::vec<2> rhs)
+{
+    lhs = vec<2>(lhs.e[0] + rhs.e[0],
+                 lhs.e[1] + rhs.e[1]);
+    return lhs;
+}
+
+const math::vec<2> math::operator-(math::vec<2> lhs, math::vec<2> rhs)
+{
+    return vec<2>(lhs.e[0] - rhs.e[0],
+                  lhs.e[1] - rhs.e[1]);
+}
+const math::vec<2> math::operator-=(math::vec<2>& lhs, math::vec<2> rhs)
+{
+    lhs = lhs - rhs;
+    return lhs;
+}
+const math::vec<2> math::operator*(math::vec<2> lhs, math::vec<2> rhs)
+{
+    return vec<2>(lhs.e[0] * rhs.e[0],
+                  lhs.e[1] * rhs.e[1]);
+}
+const math::vec<2> math::operator*=(math::vec<2>& lhs, math::vec<2> rhs)
+{
+    lhs = lhs * rhs;
+    return lhs;
+}
+
+const math::vec<2> math::operator*(vec<2> lhs, float rhs)
+{
+    return math::vec<2>(lhs.e[0] * rhs,
+                        lhs.e[1] * rhs);
+}
+
+const math::vec<2> math::operator*=(vec<2>& lhs, float rhs)
+{
+    lhs = lhs * rhs;
+    return lhs;
+}
+
+const math::vec<2> math::operator/(vec<2> lhs, vec<2> rhs)
+{
+    return math::vec<2>(lhs.e[0] / rhs.e[0],
+                        lhs.e[1] / rhs.e[1]);
+}
+
+const math::vec<2> math::operator/=(vec<2>& lhs, vec<2> rhs)
+{
+    lhs = lhs / rhs;
+    return lhs;
+}
+
+const math::vec<2> math::operator/(vec<2> lhs, float rhs)
+{
+    return math::vec<2>(lhs.e[0] / rhs,
+                        lhs.e[1] / rhs);
+}
+
+const math::vec<2> math::operator/=(vec<2>& lhs, float rhs)
+{
+    lhs = lhs / rhs;
+    return lhs;
+}
+
+const bool math::anyGreater(vec<2> lhs, vec<2> rhs)
+{
+    return lhs.e[0] > rhs.e[0] ||
+           lhs.e[1] > rhs.e[1];
+}
+
+const bool math::anyLesser(vec<2> lhs, vec<2> rhs)
+{
+    return lhs.e[0] < rhs.e[0] ||
+           lhs.e[1] < rhs.e[1];
+}
+
+const bool math::anyEqual(vec<2> lhs, vec<2> rhs)
+{
+    return lhs.e[0] == rhs.e[0] ||
+           lhs.e[1] == rhs.e[1];
+}
+
+const bool math::allGreater(vec<2> lhs, vec<2> rhs)
+{
+    return lhs.e[0] > rhs.e[0] &&
+           lhs.e[1] > rhs.e[1];
+}
+
+const bool math::allLesser(vec<2> lhs, vec<2> rhs)
+{
+    return lhs.e[0] < rhs.e[0] &&
+           lhs.e[1] < rhs.e[1];
+}
+
+const bool math::allEqual(vec<2> lhs, vec<2> rhs)
+{
+    return lhs.e[0] == rhs.e[0] &&
+           lhs.e[1] == rhs.e[1];
+}
+
+const bool math::anyGreater(vec<2> lhs, float rhs)
+{
+    return lhs.e[0] > rhs &&
+           lhs.e[1] > rhs;
+}
+const bool math::anyLesser(vec<2> lhs, float rhs)
+{
+    return lhs.e[0] < rhs &&
+           lhs.e[1] < rhs;
+}
+const bool math::anyEqual(vec<2> lhs, float rhs)
+{
+    return lhs.e[0] == rhs &&
+           lhs.e[1] == rhs;
+}
+const bool math::allGreater(vec<2> lhs, float rhs)
+{
+    return lhs.e[0] > rhs &&
+           lhs.e[1] > rhs;
+}
+const bool math::allLesser(vec<2> lhs, float rhs)
+{
+    return lhs.e[0] < rhs &&
+           lhs.e[1] < rhs;
+}
+const bool math::allEqual(vec<2> lhs, float rhs)
+{
+    return lhs.e[0] == rhs &&
+           lhs.e[1] == rhs;
+}
+
 float math::polyMulBinomial(float x, float a, float b)
 {
    // (ax [operator] b)^2

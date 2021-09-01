@@ -1,29 +1,89 @@
 #include "geometry.h"
 #include "mem.h"
-#include <ranges>
+#include <ppl.h>
 
 geometry::vol* geometry::volume;
 void geometry::init()
 {
     // Allocate volume memory
-    volume = mem::allocate_tracing<vol>(sizeof(vol)); // Generalized volume info
-    accelStructure->init(); // Acceleration-structure initializers wrap allocator calls for the volume grid + the octree itself
-
-    // Temporary procedural geometry + first-pass SDF solver
-    // Need to update integrator code to utilize these outputs and test [cell_occupancy] for per-voxel intersection state
-    // (and also test this code since I wrote it all at once and don't really know if it works or not)
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    volume = mem::allocate_tracing<vol>(vol::footprint); // Generalized volume info
+    ZeroMemory(volume->cell_states, vol::res / 8);
 
     // Temporary procedural geometry - eventually this will be loaded from disk
+    // Huge speedup using parallel_for here; when we begin loading from disk we should try to maintain parallelism using custom threads
+    // (ten threads doing four slices at a time each, using a specialized accessor to fill/write one chunk/64 bits in each step)
+    //concurrency::parallel_for((uint64_t)0, (uint64_t)vol::res, [&](uint64_t i)
     for (uint32_t i : countRange(0u, vol::res))
     {
         math::vec<3> uvw = vol::uvw_solver(i);
-        if (math::eps_equality(uvw.z(), std::sin(uvw.x())) &&
-            math::eps_equality(uvw.z(), std::cos(uvw.y()))) // Regular waves on the XZ plane
+#define GEOM_DEMO_WAVES
+//#define GEOM_DEMO_STRIPES
+//#define GEOM_EMO_SPHERE // Leaving spheres and other 3D geometry until I get around to writing a better algorithm for marching within the volume grid
+//#define GEOM_DEMO_CIRCLE
+#ifdef GEOM_DEMO_STRIPES
+        uvw = math::floor(uvw);
+        vol::CELL_STATUS stat_setting = ((uint32_t)(uvw.x() / 64) % 2) ? geometry::vol::CELL_STATUS::OCCUPIED :
+                                                                         geometry::vol::CELL_STATUS::EMPTY;
+        volume->set_cell(stat_setting, uvw);
+#elif defined(GEOM_DEMO_WAVES)
+        constexpr float num_waves = 8.0f;
+        constexpr float stretch = vol::width / num_waves / math::pi;
+        constexpr float ampli = stretch;
+        if (uvw.y() < (((std::sin(uvw.x() / stretch)) * ampli) + 512))
         {
-            accelStructure->update(i, true); // Inside geometry, set the corresponding bit ^_^
+            volume->set_cell(geometry::vol::CELL_STATUS::OCCUPIED, math::floor(uvw));
         }
-    }
+        else
+        {
+            volume->set_cell(geometry::vol::CELL_STATUS::EMPTY, math::floor(uvw));
+        }
+#elif defined(GEOM_DEMO_CIRCLE)
+        constexpr float r = 512.0f;
+        const math::vec<2> circOrigin(512, 512);
+        if ((circOrigin - uvw.xy()).magnitude() < r)
+        {
+            volume->set_cell(geometry::vol::CELL_STATUS::OCCUPIED, math::floor(uvw));
+        }
+        else
+        {
+            volume->set_cell(geometry::vol::CELL_STATUS::EMPTY, math::floor(uvw));
+        }
+#elif defined(GEOM_DEMO_SPHERE)
+        constexpr float r = 512.0f;
+        const math::vec<3> circOrigin(512, 512, 512);
+        if (uvw.magnitude() < r)
+        {
+            volume->set_cell(geometry::vol::CELL_STATUS::OCCUPIED, math::floor(uvw));
+        }
+        else
+        {
+            volume->set_cell(geometry::vol::CELL_STATUS::EMPTY, math::floor(uvw));
+        }
+#elif defined(GEOM_DEMO_SOLID)
+        volume->set_cell(geometry::vol::CELL_STATUS::OCCUPIED, uvw);
+#endif
+    }//);
+
+
+    // Black-box test box set/unset code on every cell, using the stripey test pattern shown above
+//#define VALIDATE_CELL_OPS
+#ifdef VALIDATE_CELL_OPS
+    ZeroMemory(volume->cell_states, vol::res / 8);
+    for (uint32_t i : countRange(0u, vol::res))
+    {
+        math::vec<3> uvw = vol::uvw_solver(i);
+        uvw = math::floor(uvw);
+        vol::CELL_STATUS stat_setting = ((uint32_t)(uvw.x() / 64) % 2) ? geometry::vol::CELL_STATUS::OCCUPIED :
+                                                                         geometry::vol::CELL_STATUS::EMPTY;
+        volume->set_cell(stat_setting, uvw);
+        vol::CELL_STATUS status = volume->test_cell(uvw);
+        if (status != stat_setting)
+        {
+            DebugBreak();
+        }
+        //volume->set_cell(geometry::vol::CELL_STATUS::OCCUPIED, uvw);
+    }//);
+#endif
 
     // Update transform metadata; eventually this should be loaded from disk
     volume->metadata.pos = math::vec<3>(0.0f, 0.0f, 20.0f);

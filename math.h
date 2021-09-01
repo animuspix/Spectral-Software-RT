@@ -147,6 +147,7 @@ namespace math
     };
 
     // Linear algebra operators
+    // 3D
     const vec<3> operator+(vec<3> lhs, vec<3> rhs);
     const vec<3> operator+=(vec<3>& lhs, vec<3> rhs);
     const vec<3> operator-(vec<3> lhs, vec<3> rhs);
@@ -159,6 +160,44 @@ namespace math
     const vec<3> operator/=(vec<3>& lhs, vec<3> rhs);
     const vec<3> operator/(vec<3> lhs, float rhs);
     const vec<3> operator/=(vec<3>& lhs, float rhs);
+    const bool anyGreater(vec<3> lhs, vec<3> rhs);
+    const bool anyLesser(vec<3> lhs, vec<3> rhs);
+    const bool anyEqual(vec<3> lhs, vec<3> rhs);
+    const bool allGreater(vec<3> lhs, vec<3> rhs);
+    const bool allLesser(vec<3> lhs, vec<3> rhs);
+    const bool allEqual(vec<3> lhs, vec<3> rhs);
+    const bool anyGreater(vec<3> lhs, float rhs);
+    const bool anyLesser(vec<3> lhs, float rhs);
+    const bool anyEqual(vec<3> lhs, float rhs);
+    const bool allGreater(vec<3> lhs, float rhs);
+    const bool allLesser(vec<3> lhs, float rhs);
+    const bool allEqual(vec<3> lhs, float rhs);
+
+    // 2D
+    const vec<2> operator+(vec<2> lhs, vec<2> rhs);
+    const vec<2> operator+=(vec<2>& lhs, vec<2> rhs);
+    const vec<2> operator-(vec<2> lhs, vec<2> rhs);
+    const vec<2> operator-=(vec<2>& lhs, vec<2> rhs);
+    const vec<2> operator*(vec<2> lhs, vec<2> rhs);
+    const vec<2> operator*=(vec<2>& lhs, vec<2> rhs);
+    const vec<2> operator*(vec<2> lhs, float rhs);
+    const vec<2> operator*=(vec<2>& lhs, float rhs);
+    const vec<2> operator/(vec<2> lhs, vec<2> rhs);
+    const vec<2> operator/=(vec<2>& lhs, vec<2> rhs);
+    const vec<2> operator/(vec<2> lhs, float rhs);
+    const vec<2> operator/=(vec<2>& lhs, float rhs);
+    const bool anyGreater(vec<2> lhs, vec<2> rhs);
+    const bool anyLesser(vec<2> lhs, vec<2> rhs);
+    const bool anyEqual(vec<2> lhs, vec<2> rhs);
+    const bool allGreater(vec<2> lhs, vec<2> rhs);
+    const bool allLesser(vec<2> lhs, vec<2> rhs);
+    const bool allEqual(vec<2> lhs, vec<2> rhs);
+    const bool anyGreater(vec<2> lhs, float rhs);
+    const bool anyLesser(vec<2> lhs, float rhs);
+    const bool anyEqual(vec<2> lhs, float rhs);
+    const bool allGreater(vec<2> lhs, float rhs);
+    const bool allLesser(vec<2> lhs, float rhs);
+    const bool allEqual(vec<2> lhs, float rhs);
 
     // General functions
     float polyMulBinomial(float x, float a, float b);

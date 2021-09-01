@@ -249,6 +249,7 @@
     <ClInclude Include="scene.h" />
     <ClInclude Include="spectra.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="tmp_vec.h" />
     <ClInclude Include="tracing.h" />
     <ClInclude Include="ui.h" />
     <ClInclude Include="utils.h" />
