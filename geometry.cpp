@@ -12,58 +12,57 @@ void geometry::init()
     // Temporary procedural geometry - eventually this will be loaded from disk
     // Huge speedup using parallel_for here; when we begin loading from disk we should try to maintain parallelism using custom threads
     // (ten threads doing four slices at a time each, using a specialized accessor to fill/write one chunk/64 bits in each step)
-    //concurrency::parallel_for((uint64_t)0, (uint64_t)vol::res, [&](uint64_t i)
-    for (uint32_t i : countRange(0u, vol::res))
+    concurrency::parallel_for((uint64_t)0, (uint64_t)vol::res, [&](uint64_t i)
+    //for (uint32_t i : countRange(0u, vol::res))
     {
         math::vec<3> uvw = vol::uvw_solver(i);
-#define GEOM_DEMO_WAVES
+//#define GEOM_DEMO_WAVES
 //#define GEOM_DEMO_STRIPES
-//#define GEOM_EMO_SPHERE // Leaving spheres and other 3D geometry until I get around to writing a better algorithm for marching within the volume grid
+#define GEOM_DEMO_SPHERE // Leaving spheres and other 3D geometry until I get around to writing a better algorithm for marching within the volume grid
 //#define GEOM_DEMO_CIRCLE
 #ifdef GEOM_DEMO_STRIPES
         uvw = math::floor(uvw);
         vol::CELL_STATUS stat_setting = ((uint32_t)(uvw.x() / 64) % 2) ? geometry::vol::CELL_STATUS::OCCUPIED :
                                                                          geometry::vol::CELL_STATUS::EMPTY;
-        volume->set_cell(stat_setting, uvw);
+        volume->set_cell_state(stat_setting, uvw);
 #elif defined(GEOM_DEMO_WAVES)
         constexpr float num_waves = 8.0f;
         constexpr float stretch = vol::width / num_waves / math::pi;
         constexpr float ampli = stretch;
         if (uvw.y() < (((std::sin(uvw.x() / stretch)) * ampli) + 512))
         {
-            volume->set_cell(geometry::vol::CELL_STATUS::OCCUPIED, math::floor(uvw));
+            volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, math::floor(uvw));
         }
         else
         {
-            volume->set_cell(geometry::vol::CELL_STATUS::EMPTY, math::floor(uvw));
+            volume->set_cell_state(geometry::vol::CELL_STATUS::EMPTY, math::floor(uvw));
         }
 #elif defined(GEOM_DEMO_CIRCLE)
         constexpr float r = 512.0f;
         const math::vec<2> circOrigin(512, 512);
         if ((circOrigin - uvw.xy()).magnitude() < r)
         {
-            volume->set_cell(geometry::vol::CELL_STATUS::OCCUPIED, math::floor(uvw));
+            volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, math::floor(uvw));
         }
         else
         {
-            volume->set_cell(geometry::vol::CELL_STATUS::EMPTY, math::floor(uvw));
+            volume->set_cell_state(geometry::vol::CELL_STATUS::EMPTY, math::floor(uvw));
         }
 #elif defined(GEOM_DEMO_SPHERE)
         constexpr float r = 512.0f;
         const math::vec<3> circOrigin(512, 512, 512);
-        if (uvw.magnitude() < r)
+        if ((circOrigin - uvw).magnitude() < r)
         {
-            volume->set_cell(geometry::vol::CELL_STATUS::OCCUPIED, math::floor(uvw));
+            volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, math::floor(uvw));
         }
         else
         {
-            volume->set_cell(geometry::vol::CELL_STATUS::EMPTY, math::floor(uvw));
+            volume->set_cell_state(geometry::vol::CELL_STATUS::EMPTY, math::floor(uvw));
         }
 #elif defined(GEOM_DEMO_SOLID)
-        volume->set_cell(geometry::vol::CELL_STATUS::OCCUPIED, uvw);
+        volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, uvw);
 #endif
-    }//);
-
+    });
 
     // Black-box test box set/unset code on every cell, using the stripey test pattern shown above
 //#define VALIDATE_CELL_OPS
@@ -75,8 +74,8 @@ void geometry::init()
         uvw = math::floor(uvw);
         vol::CELL_STATUS stat_setting = ((uint32_t)(uvw.x() / 64) % 2) ? geometry::vol::CELL_STATUS::OCCUPIED :
                                                                          geometry::vol::CELL_STATUS::EMPTY;
-        volume->set_cell(stat_setting, uvw);
-        vol::CELL_STATUS status = volume->test_cell(uvw);
+        volume->set_cell_state(stat_setting, uvw);
+        vol::CELL_STATUS status = volume->test_cell_state(uvw);
         if (status != stat_setting)
         {
             DebugBreak();
@@ -86,9 +85,9 @@ void geometry::init()
 #endif
 
     // Update transform metadata; eventually this should be loaded from disk
-    volume->metadata.pos = math::vec<3>(0.0f, 0.0f, 20.0f);
-    volume->metadata.orientation = math::vec<4>(0.0f, 0.0f, 0.0f, 1.0f);
-    volume->metadata.scale = math::vec<3>(4, 4, 4); // Boring regular unit scale
+    volume->metadata.transf.pos = math::vec<3>(0.0f, 0.0f, 20.0f);
+    volume->metadata.transf.orientation = math::vec<4>(0.0f, 0.0f, 0.0f, 1.0f);
+    volume->metadata.transf.scale = math::vec<3>(4, 4, 4); // Boring regular unit scale
 
     // Update material metadata; eventually this should be loaded from disk
     materials::instance& boxMat = volume->metadata.mat;
@@ -98,16 +97,12 @@ void geometry::init()
     boxMat.spectral_response = math::fn<4, const float>(spectra::placeholder_spd);
 }
 
-bool geometry::test(math::vec<3> dir, math::vec<3>* ro_inout, geometry::vol::vol_nfo** vol_nfo_out)
+bool geometry::test(math::vec<3> dir, math::vec<3>* ro_inout, geometry::vol::vol_nfo* vol_nfo_out)
 {
-    // Trashy loop disregards depth and visibility; future versions will perform octree traversal here too
-    // Load the current object
-    vol::vol_nfo* vol_meta = &volume->metadata;
-
     // Import object properties
-    const math::vec<3> extents = vol_meta->scale * 0.5f; // Extents from object origin
-    const math::vec<3> pos = vol_meta->pos;
-    const math::vec<4> orientation = vol_meta->orientation;
+    const math::vec<3> extents = volume->metadata.transf.scale * 0.5f; // Extents from object origin
+    const math::vec<3> pos = volume->metadata.transf.pos;
+    const math::vec<4> orientation = volume->metadata.transf.orientation;
 
     // Intersection math adapted from
     // https://www.shadertoy.com/view/ltKyzm, itself adapted from the Scratchapixel tutorial here:
@@ -151,8 +146,92 @@ bool geometry::test(math::vec<3> dir, math::vec<3>* ro_inout, geometry::vol::vol
     if (isect)
     {
         *ro_inout = *ro_inout + (dir * sT.e[0]);
-        *vol_nfo_out = vol_meta;
+        *vol_nfo_out = volume->metadata;
         return true;
     }
+    return false;
+}
+
+// Should create a generic box intersector with parameters for world/voxel space and call it from this + the main geometry test,
+// instead of having duplicated code here
+// No transform data for this version, since we're working in voxel space and converting back to worldspace afterwards
+bool geometry::test_cell_intersection(math::vec<3> dir, math::vec<3>* ro_inout, math::vec<3> src_cell_uvw)
+{
+    // Cache fixed transform values
+    const math::vec<3> extents = math::vec<3>(0.5f, 0.5f, 0.5f); // Extents from object origin
+
+    // Walk through each neighbour of the given cell
+    for (int32_t i = -1; i <= 1; i++)
+    {
+        for (int32_t j = -1; j <= 1; j++) // Grr? Not totally certain how to optimize this, I don't think naive loop unrolling will be enough
+        {
+            for (int32_t k = -1; k <= 1; k++)
+            {
+                // Avoid testing our home cell
+                if (i == 0 && j == 0 && k == 0) continue;
+
+                // Otherwise resolve the target cell
+                math::vec<3> cell_offs = math::vec<3>(i, j, k);
+                math::vec<3> target_cell = src_cell_uvw + cell_offs;
+
+                // Avoid testing any cells in the opposite direction the ray (since we don't care about them anyways)
+                const float cell_vis = dir.dot(cell_offs.normalized());
+                if (cell_vis <= 0) continue;
+
+                // Avoid testing any cells outside the defined part of the volume
+                if (math::anyGreater(target_cell, vol::width) || math::anyLesser(target_cell, 0)) continue;
+
+                // Compute an intersection test on the current neightbour; return immediately when an intersection is found
+                ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+                // Intersection math adapted from
+                // https://www.shadertoy.com/view/ltKyzm, itself adapted from the Scratchapixel tutorial here:
+                // https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
+
+                // Synthesize box boundaries
+                const math::vec<3> boundsMin = (target_cell - extents);
+                const math::vec<3> boundsMax = (target_cell + extents);
+
+                // Evaluate per-axis distances to each plane in the box
+                // Not super sure why these divisions happen?
+                // Should probably reread math for all this in general
+                math::vec<3> plane_dists[2] =
+                {
+                    (boundsMin - src_cell_uvw) / dir,
+                    (boundsMax - src_cell_uvw) / dir
+                };
+
+                // Keep near distances in [0], far distances in [1]
+                const math::vec<3> dist0 = plane_dists[0];
+                const math::vec<3> dist1 = plane_dists[1];
+                plane_dists[0].e[0] = std::min(dist0.x(), dist1.x());
+                plane_dists[0].e[1] = std::min(dist0.y(), dist1.y());
+                plane_dists[0].e[2] = std::min(dist0.z(), dist1.z());
+                plane_dists[1].e[0] = std::max(dist0.x(), dist1.x());
+                plane_dists[1].e[1] = std::max(dist0.y(), dist1.y());
+                plane_dists[1].e[2] = std::max(dist0.z(), dist1.z());
+
+                // Evaluate scalar min/max distances for the given ray
+                math::vec<2> sT = math::vec<2>(std::max(std::max(plane_dists[0].x(), plane_dists[0].y()), plane_dists[0].z()),
+                                               std::min(std::min(plane_dists[1].x(), plane_dists[1].y()), plane_dists[1].z()));
+                sT = math::vec<2>(std::min(sT.x(), sT.y()), std::max(sT.x(), sT.y())); // Keep near distance in [x], far distance in [y]
+
+                // Resolve intersection status
+                const bool isect = (plane_dists[0].x() < plane_dists[1].y() && plane_dists[0].y() < plane_dists[1].x() &&
+                                    plane_dists[0].z() < sT.y() && sT.x() < plane_dists[1].z()) && (sT.e[0] > 0); // Extend intersection test to ignore intersections behind the current ray  (where the direction
+                                                                                                                  // to the intersection point is the reverse of the current ray direction)
+
+                // Write out intersection position + shared object info for successful intersections, then early-out
+                if (isect)
+                {
+                    *ro_inout = *ro_inout + (dir * sT.e[0] * vol::cell_size * volume->metadata.transf.scale); // Update world-space position, after converting displacement from voxel space
+                                                                                                              // (scale once for cell size, again for volume scale)
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Only possible way to get here is by failing to find an intersection above
     return false;
 }

@@ -14,14 +14,18 @@ public:
         static constexpr uint32_t slice_area = width * width;
         static constexpr uint32_t res = slice_area * width;
         static constexpr float cell_size = 1.0f / width;
+        struct transform_nfo
+        {
+            math::vec<3> scale; // Bounding-box scale on x/y/z
+            math::vec<3> pos; // World-space position
+            math::vec<4> orientation; // World-space orientation, specified as a quaternion
+        };
 
         // Volume metadata (material, transform information)
         struct vol_nfo
         {
             materials::instance mat;
-            math::vec<3> scale; // Bounding-box scale on x/y/z
-            math::vec<3> pos; // World-space position
-            math::vec<4> orientation; // World-space orientation, specified as a quaternion
+            transform_nfo transf;
         };
         vol_nfo metadata;
         uint64_t cell_states[res / 64]; // One bit/cell; order is left-right/front-back/top-bottom
@@ -69,7 +73,7 @@ public:
             OCCUPIED,
             EMPTY
         };
-        void set_cell(CELL_STATUS status, math::vec<3> uvw_floored)
+        void set_cell_state(CELL_STATUS status, math::vec<3> uvw_floored)
         {
             uint64_t bit_selector = 0x0;
             uint32_t chunk_ndx = index_solver(uvw_floored, &bit_selector);
@@ -77,7 +81,7 @@ public:
             if (status == CELL_STATUS::OCCUPIED) s |= bit_selector;
             else { s &= ~bit_selector; }
         }
-        CELL_STATUS test_cell(math::vec<3> uvw_floored)
+        CELL_STATUS test_cell_state(math::vec<3> uvw_floored)
         {
             uint64_t bit_selector = 0x0;
             uint32_t chunk_ndx = index_solver(uvw_floored, &bit_selector);
@@ -96,6 +100,17 @@ public:
     };
     static vol* volume;
     static void init();
-    static bool test(math::vec<3> dir, math::vec<3>* ro_inout, geometry::vol::vol_nfo** vol_nfo_out);
+
+    // Test the bounding geometry for the volume grid
+    // Used to quickly mask out rays that immediately hit the sky or an external light source
+    static bool test(math::vec<3> dir, math::vec<3>* ro_inout, geometry::vol::vol_nfo* vol_nfo_out);
+
+    // Test for intersections with individual cells within the grid
+    // Used for traversal within the grid, before shading occurs in each bounce/ray-step; the API takes a source cell + the bounding volume's transformation
+    // info and resolves which of the nearby cells the input ray will intersect next
+    // Preferred to straightforward volume marching because of the potential to land inside a cell and "bounce" forever,
+    // which this method avoids (irl light flows instead of bouncing, but I do still want to have surface approximations
+    // like diffuse/spec surfaces instead of handling everything with subsurface scattering/absorption)
+    static bool test_cell_intersection(math::vec<3> dir, math::vec<3>* ro_inout, math::vec<3> src_cell_uvw);
 };
 

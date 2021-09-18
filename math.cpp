@@ -121,20 +121,20 @@ const bool math::allEqual(vec<3> lhs, vec<3> rhs)
 
 const bool math::anyGreater(vec<3> lhs, float rhs)
 {
-    return lhs.e[0] > rhs &&
-           lhs.e[1] > rhs &&
+    return lhs.e[0] > rhs ||
+           lhs.e[1] > rhs ||
            lhs.e[2] > rhs;
 }
 const bool math::anyLesser(vec<3> lhs, float rhs)
 {
-    return lhs.e[0] < rhs &&
-           lhs.e[1] < rhs &&
+    return lhs.e[0] < rhs ||
+           lhs.e[1] < rhs ||
            lhs.e[2] < rhs;
 }
 const bool math::anyEqual(vec<3> lhs, float rhs)
 {
-    return lhs.e[0] == rhs &&
-           lhs.e[1] == rhs &&
+    return lhs.e[0] == rhs ||
+           lhs.e[1] == rhs ||
            lhs.e[2] == rhs;
 }
 const bool math::allGreater(vec<3> lhs, float rhs)
@@ -403,6 +403,13 @@ math::vec<3> math::abs(math::vec<3> v)
     return math::vec<3>(std::abs(v.e[0]),
                         std::abs(v.e[1]),
                         std::abs(v.e[2]));
+}
+
+math::vec<3> math::vmodf(math::vec<3> u, math::vec<3> v)
+{
+    return math::vec<3>(fmodf(u.e[0], v.e[0]),
+                        fmodf(u.e[0], v.e[0]),
+                        fmodf(u.e[0], v.e[0]));
 }
 
 float math::sgn(float f)

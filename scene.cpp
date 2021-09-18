@@ -18,7 +18,7 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
     bool path_absorbed = false;
     bool path_escaped = false;
     uint8_t bounceCtr = 0;
-    geometry::vol::vol_nfo* volume_nfo;
+    geometry::vol::vol_nfo volume_nfo;
     bool within_grid = geometry::test(curr_ray.dir, &curr_ray.ori, &volume_nfo);
 //#define VALIDATE_VERTEX_COUNTS
 #ifdef VALIDATE_VERTEX_COUNTS
@@ -47,28 +47,61 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
             while (!surf_found && !ray_escaped) // We want to resolve floored voxel coordinates at least once before looking anything up
             {
                 // Resolve intersection cell each tap
-                rel_p = (curr_ray.ori - volume_nfo->pos) + (volume_nfo->scale * 0.5f); // Relative position from lower object corner
-                uvw = rel_p / volume_nfo->scale; // Normalized UVW
+                rel_p = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f); // Relative position from lower object corner
+                uvw = rel_p / volume_nfo.transf.scale; // Normalized UVW
                 uvw_scaled = uvw * geometry::vol::width; // Voxel coordinates! :D
                 uvw_i = math::floor(uvw_scaled);
-                if (math::anyGreater(rel_p, volume_nfo->scale) || anyLesser(rel_p, math::vec<3>(0,0,0))) // Break out early if we've left the volume
-                {
-                    uvw_i = math::max(uvw_i, math::vec<3>(0, 0, 0));
-                    ray_escaped = true;
-                    within_grid = false;
-                    break;
-                }
-                if (geometry::volume->test_cell(uvw_i) == geometry::vol::CELL_STATUS::OCCUPIED)
+                if (geometry::volume->test_cell_state(uvw_i) == geometry::vol::CELL_STATUS::OCCUPIED)
                 {
                     surf_found = true;
                     break;
                 }
                 else
                 {
-                    //curr_ray.ori += curr_ray.dir * (volume_nfo->scale * geometry::vol::cell_size); // Might be too simple? Not sure
-                    ray_escaped = true;
-                    within_grid = false;
-                    break;
+                    // Find the next cell intersection, and step into it before recalculating rel_p/uvw & checking occupancy again
+                    math::vec<3> input_ro = curr_ray.ori;
+                    bool cell_step_success = geometry::test_cell_intersection(curr_ray.dir, &curr_ray.ori, uvw_i);
+                    if (!cell_step_success) // The only way for this to happen is usually for a ray to be scattering at the boundary of the volume and refract out; if every neighbour fails
+                                            // to intersect, something is probably wrong
+                    {
+                        uvw_i = math::max(uvw_i, math::vec<3>(0, 0, 0));
+                        ray_escaped = true;
+                        within_grid = false;
+                        break;
+                    }
+
+//#define PROPAGATION_DBG
+#ifdef PROPAGATION_DBG
+                    // Debug outputs for input/output ray positions
+                    std::stringstream str_strm;
+                    math::vec<3> d_ro = curr_ray.ori - input_ro;
+                    str_strm << "input ray position (" << input_ro.x() << "," << input_ro.y() << "," << input_ro.z() << ")\n";
+                    str_strm << "output ray position (" << curr_ray.ori.x() << "," << curr_ray.ori.y() << "," << curr_ray.ori.z() << ")\n";
+                    str_strm << "delta (" << d_ro.x() << "," << d_ro.y() << "," << d_ro.z() << ")\n\n";
+
+                    // Debug outputs for input/output ray positions relative to the lower-left corner of the volume
+                    math::vec<3> rel_p2 = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f);
+                    math::vec<3> drel_p2 = rel_p2 - rel_p;
+                    str_strm << "input relative ray pos (" << rel_p.x() << "," << rel_p.y() << "," << rel_p.z() << ")\n";
+                    str_strm << "expected output relative ray pos (" << rel_p2.x() << "," << rel_p2.y() << "," << rel_p2.z() << ")\n";
+                    str_strm << "delta (" << rel_p.x() << "," << rel_p.y() << "," << rel_p.z() << ")\n\n";
+
+                    // Debug outputs for input/output voxel coordinates
+                    math::vec<3> uvw2 = rel_p / volume_nfo.transf.scale;
+                    math::vec<3> uvw_scaled2 = uvw2 * geometry::vol::width;
+                    math::vec<3> uvw_i2 = math::floor(uvw_scaled2);
+                    math::vec<3> duvw2 = uvw2 - uvw, duvw_scaled2 = uvw_scaled2 - uvw_scaled, duvw_i2 = uvw_i2 - uvw;
+                    str_strm << "input voxel coordinates, normalized (" << uvw.x() << "," << uvw.y() << "," << uvw.z() << ")"
+                             << ", scaled (" << uvw_scaled.x() << "," << uvw_scaled.y() << "," << uvw_scaled.z() << ")"
+                             << ", floored/integral (" << uvw_i.x() << "," << uvw_i.y() << "," << uvw_i.z() << ")" << "\n";
+                    str_strm << "expected output voxel coordinates, normalized (" << uvw2.x() << "," << uvw2.y() << "," << uvw2.z() << ")"
+                             << ", scaled (" << uvw_scaled2.x() << "," << uvw_scaled2.y() << "," << uvw_scaled2.z() << ")"
+                             << ", floored/integral (" << uvw_i2.x() << "," << uvw_i2.y() << "," << uvw_i2.z() << ")" << "\n";
+                    str_strm << "delta, normalized (" << duvw2.x() << "," << duvw2.y() << "," << duvw2.z()
+                             << ", scaled (" << duvw_scaled2.x() << "," << duvw_scaled2.y() << "," << duvw_scaled2.z() << ")"
+                             << ", floored/integral (" << duvw_i2.x() << "," << duvw_i2.y() << "," << duvw_i2.z() << ")" << ")\n\n";
+                    OutputDebugStringA(str_strm.str().c_str());
+#endif
                 }
 #ifdef _DEBUG
                 assert(uvw_i.x() >= 0.0f && uvw_i.y() >= 0.0f && uvw_i.z() >= 0.0f); // Voxel coordinates should never be negative
@@ -125,7 +158,7 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                     if ((neighbour_0.x() > geometry::vol::width || neighbour_0.x() < 0 || // Test if the zeroth neighbour lies completely outside the voxel grid
                          neighbour_0.y() > geometry::vol::width || neighbour_0.y() < 0 ||
                          neighbour_0.z() > geometry::vol::width || neighbour_0.z() < 0) ||
-                        (geometry::volume->test_cell(neighbour_0) == geometry::vol::CELL_STATUS::EMPTY)) // If not, test if the cell it points into is occupied
+                        (geometry::volume->test_cell_state(neighbour_0) == geometry::vol::CELL_STATUS::EMPTY)) // If not, test if the cell it points into is occupied
                     {
                         // Zeroth neighbour lies outside the volume, zeroth candidate normal is safe to use
                         n = n0;
@@ -133,7 +166,7 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                     else if ((neighbour_1.x() > geometry::vol::width || neighbour_1.x() < 0 || // Test if the first neighbour lies completely outside the voxel grid
                               neighbour_1.y() > geometry::vol::width || neighbour_1.y() < 0 ||
                               neighbour_1.z() > geometry::vol::width || neighbour_1.z() < 0) ||
-                             (geometry::volume->test_cell(neighbour_1) == geometry::vol::CELL_STATUS::EMPTY))
+                             (geometry::volume->test_cell_state(neighbour_1) == geometry::vol::CELL_STATUS::EMPTY))
                     {
                         // First neighbour lies outside the volume, first candidate normal is safe to use
                         n = n1;
@@ -142,13 +175,13 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                          // Only hit this codepath in release mode - seems related to fp/fast and fp intrinsics compiler settings, no longer hit after turning those off
                     {
                         std::stringstream strm_cell_dbg;
-                        strm_cell_dbg << "source cell is " << ((geometry::volume->test_cell(uvw_i) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "left x-neighbour is " << ((geometry::volume->test_cell(uvw_i - math::vec<3>(1, 0, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "right x-neighbour is " << ((geometry::volume->test_cell(uvw_i + math::vec<3>(1, 0, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "top y-neighbour is " << ((geometry::volume->test_cell(uvw_i + math::vec<3>(0, 1, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "bottom y-neighbour is " << ((geometry::volume->test_cell(uvw_i - math::vec<3>(0, 1, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "forward z-neighbour is " << ((geometry::volume->test_cell(uvw_i + math::vec<3>(0, 0, 1)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "backward z-neighbour is " << ((geometry::volume->test_cell(uvw_i - math::vec<3>(0, 0, 1)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
+                        strm_cell_dbg << "source cell is " << ((geometry::volume->test_cell_state(uvw_i) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
+                        strm_cell_dbg << "left x-neighbour is " << ((geometry::volume->test_cell_state(uvw_i - math::vec<3>(1, 0, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
+                        strm_cell_dbg << "right x-neighbour is " << ((geometry::volume->test_cell_state(uvw_i + math::vec<3>(1, 0, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
+                        strm_cell_dbg << "top y-neighbour is " << ((geometry::volume->test_cell_state(uvw_i + math::vec<3>(0, 1, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
+                        strm_cell_dbg << "bottom y-neighbour is " << ((geometry::volume->test_cell_state(uvw_i - math::vec<3>(0, 1, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
+                        strm_cell_dbg << "forward z-neighbour is " << ((geometry::volume->test_cell_state(uvw_i + math::vec<3>(0, 0, 1)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
+                        strm_cell_dbg << "backward z-neighbour is " << ((geometry::volume->test_cell_state(uvw_i - math::vec<3>(0, 0, 1)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
                         OutputDebugStringA(strm_cell_dbg.str().c_str());
                         DebugBreak();
                         n = cellOffs;
@@ -160,13 +193,13 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                 }
 
                 // Sample surfaces (just lambertian diffuse for now)
-                switch (volume_nfo->mat.material_type)
+                switch (volume_nfo.mat.material_type)
                 {
                     case material_labels::DIFFUSE:
                         float sample[4];
                         sampler::rand_streams[tileNdx].next(sample);
                         materials::diffuse_surface_sample(&out_vt.dir, &out_vt.pdf, sample[0], sample[1]);
-                        materials::diffuse_lambert_reflection(out_vt.rho_sample, volume_nfo->mat.spectral_response, curr_ray.ori);
+                        materials::diffuse_lambert_reflection(out_vt.rho_sample, volume_nfo.mat.spectral_response, curr_ray.ori);
                         break;
                     default:
                         DebugBreak(); // Unsupported material ;_;
@@ -183,7 +216,7 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
 
                     // Push outgoing rays slightly out of the surface (to help reduce shadow acne)
                     out_vt.ori = curr_ray.ori - (curr_ray.dir * 0.001f);
-                    out_vt.mat = &volume_nfo->mat;
+                    out_vt.mat = &volume_nfo.mat;
 
                     // Cache path vertex for integration
                     vertex_output->push(out_vt);
@@ -194,6 +227,7 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
 #endif
                     // Update current ray
                     curr_ray = out_vt;
+                    within_grid = false;
                 }
             }
         }
