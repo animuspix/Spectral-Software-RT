@@ -152,10 +152,21 @@ bool geometry::test(math::vec<3> dir, math::vec<3>* ro_inout, geometry::vol::vol
     return false;
 }
 
-// Should create a generic box intersector with parameters for world/voxel space and call it from this + the main geometry test,
-// instead of having duplicated code here
-// No transform data for this version, since we're working in voxel space and converting back to worldspace afterwards
-bool geometry::test_cell_intersection(math::vec<3> dir, math::vec<3>* ro_inout, math::vec<3> src_cell_uvw)
+struct intersection_plane
+{
+    float dist;
+    math::vec<3> n;
+    intersection_plane(float _dist, math::vec<3> _n) : dist(_dist), n(_n) {}
+    static intersection_plane min(intersection_plane lhs, intersection_plane rhs)
+    {
+        return lhs.dist > rhs.dist ? rhs : lhs;
+    }
+    static intersection_plane max(intersection_plane lhs, intersection_plane rhs)
+    {
+        return lhs.dist > rhs.dist ? lhs : rhs;
+    }
+};
+bool geometry::test_cell_intersection(math::vec<3> dir, math::vec<3>* ro_inout, math::vec<3> src_cell_uvw, math::vec<3>* n_out)
 {
     // Cache fixed transform values
     const math::vec<3> extents = math::vec<3>(0.5f, 0.5f, 0.5f); // Extents from object origin
@@ -195,37 +206,47 @@ bool geometry::test_cell_intersection(math::vec<3> dir, math::vec<3>* ro_inout, 
                 // Evaluate per-axis distances to each plane in the box
                 // Not super sure why these divisions happen?
                 // Should probably reread math for all this in general
-                math::vec<3> plane_dists[2] =
+                intersection_plane plane_dists[6] =
                 {
-                    (boundsMin - src_cell_uvw) / dir,
-                    (boundsMax - src_cell_uvw) / dir
+                    intersection_plane((boundsMin.x() - src_cell_uvw.x()) / dir.x(), math::vec<3>(-1,0,0)),
+                    intersection_plane((boundsMin.y() - src_cell_uvw.y()) / dir.y(), math::vec<3>(0,-1,0)),
+                    intersection_plane((boundsMin.z() - src_cell_uvw.z()) / dir.z(), math::vec<3>(0,0,-1)),
+                    ///////////////////////////////////////////////////////////////////////////////////////
+                    intersection_plane((boundsMax.x() - src_cell_uvw.x()) / dir.x(), math::vec<3>(1,0,0)),
+                    intersection_plane((boundsMax.y() - src_cell_uvw.y()) / dir.y(), math::vec<3>(0,1,0)),
+                    intersection_plane((boundsMax.z() - src_cell_uvw.z()) / dir.z(), math::vec<3>(0,0,1)),
                 };
 
-                // Keep near distances in [0], far distances in [1]
-                const math::vec<3> dist0 = plane_dists[0];
-                const math::vec<3> dist1 = plane_dists[1];
-                plane_dists[0].e[0] = std::min(dist0.x(), dist1.x());
-                plane_dists[0].e[1] = std::min(dist0.y(), dist1.y());
-                plane_dists[0].e[2] = std::min(dist0.z(), dist1.z());
-                plane_dists[1].e[0] = std::max(dist0.x(), dist1.x());
-                plane_dists[1].e[1] = std::max(dist0.y(), dist1.y());
-                plane_dists[1].e[2] = std::max(dist0.z(), dist1.z());
+                // Keep min/max distances correctly ordered
+                intersection_plane plane_dists_sorted[6] =
+                {
+                    intersection_plane::min(plane_dists[0], plane_dists[3]),
+                    intersection_plane::min(plane_dists[1], plane_dists[4]),
+                    intersection_plane::min(plane_dists[2], plane_dists[5]),
+                    intersection_plane::max(plane_dists[0], plane_dists[3]),
+                    intersection_plane::max(plane_dists[1], plane_dists[4]),
+                    intersection_plane::max(plane_dists[2], plane_dists[5])
+                };
 
                 // Evaluate scalar min/max distances for the given ray
-                math::vec<2> sT = math::vec<2>(std::max(std::max(plane_dists[0].x(), plane_dists[0].y()), plane_dists[0].z()),
-                                               std::min(std::min(plane_dists[1].x(), plane_dists[1].y()), plane_dists[1].z()));
-                sT = math::vec<2>(std::min(sT.x(), sT.y()), std::max(sT.x(), sT.y())); // Keep near distance in [x], far distance in [y]
+                intersection_plane sT[2] = { intersection_plane::min(intersection_plane::min(plane_dists_sorted[0], plane_dists_sorted[1]), plane_dists_sorted[2]),
+                                             intersection_plane::max(intersection_plane::max(plane_dists_sorted[3], plane_dists_sorted[4]), plane_dists_sorted[5]) };
+                intersection_plane sT_min = intersection_plane::min(sT[0], sT[1]); // Keep near/far distances correctly ordered
+                intersection_plane sT_max = intersection_plane::max(sT[0], sT[1]);
+                sT[0] = sT_min;
+                sT[1] = sT_max;
 
                 // Resolve intersection status
-                const bool isect = (plane_dists[0].x() < plane_dists[1].y() && plane_dists[0].y() < plane_dists[1].x() &&
-                                    plane_dists[0].z() < sT.y() && sT.x() < plane_dists[1].z()) && (sT.e[0] > 0); // Extend intersection test to ignore intersections behind the current ray  (where the direction
-                                                                                                                  // to the intersection point is the reverse of the current ray direction)
+                const bool isect = (plane_dists_sorted[0].dist < plane_dists_sorted[4].dist && plane_dists_sorted[1].dist < plane_dists_sorted[3].dist &&
+                                    plane_dists_sorted[5].dist < sT[1].dist && sT[0].dist < plane_dists_sorted[5].dist) && (sT[0].dist > 0); // Extend intersection test to ignore intersections behind the current ray (where the direction
+                                                                                                                                             // to the intersection point is the reverse of the current ray direction)
 
                 // Write out intersection position + shared object info for successful intersections, then early-out
                 if (isect)
                 {
-                    *ro_inout = *ro_inout + (dir * sT.e[0] * vol::cell_size * volume->metadata.transf.scale); // Update world-space position, after converting displacement from voxel space
-                                                                                                              // (scale once for cell size, again for volume scale)
+                    *n_out = sT[0].n;
+                    *ro_inout = *ro_inout + (dir * sT[0].dist * vol::cell_size * volume->metadata.transf.scale); // Update world-space position, after converting displacement from voxel space
+                                                                                                                 // (scale once for cell size, again for volume scale)
                     return true;
                 }
             }

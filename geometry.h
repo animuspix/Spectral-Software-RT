@@ -108,9 +108,14 @@ public:
     // Test for intersections with individual cells within the grid
     // Used for traversal within the grid, before shading occurs in each bounce/ray-step; the API takes a source cell + the bounding volume's transformation
     // info and resolves which of the nearby cells the input ray will intersect next
+    // Since our intersection test here is basically testing each plane in order and selecting the one with the minimum distance, I decided it made sense to
+    // generate a normal as well - the numerical approximation I had before "worked", but really unreliably, and this way should hopefully be simpler + easier
+    // to debug
+    // Should create a generic box intersector with parameters for cell/world-space intersections, and call it from this + the main geometry test, instead of
+    // having duplicated code here
+    // No transform data for this version, since we're working in voxel space and converting back to worldspace afterwards
     // Preferred to straightforward volume marching because of the potential to land inside a cell and "bounce" forever,
     // which this method avoids (irl light flows instead of bouncing, but I do still want to have surface approximations
     // like diffuse/spec surfaces instead of handling everything with subsurface scattering/absorption)
-    static bool test_cell_intersection(math::vec<3> dir, math::vec<3>* ro_inout, math::vec<3> src_cell_uvw);
+    static bool test_cell_intersection(math::vec<3> dir, math::vec<3>* ro_inout, math::vec<3> src_cell_uvw, math::vec<3>* n_out);
 };
-

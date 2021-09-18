@@ -9,6 +9,8 @@
 #undef min
 #undef max
 
+// Eventually the debug outputs here will need to be multithreaded
+
 static float horizon_dist = 1000.0f;
 void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dist, uint32_t tileNdx)
 {
@@ -21,6 +23,15 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
     geometry::vol::vol_nfo volume_nfo;
     bool within_grid = geometry::test(curr_ray.dir, &curr_ray.ori, &volume_nfo);
 //#define VALIDATE_VERTEX_COUNTS
+//#define PROPAGATION_DBG
+//#define VALIDATE_BOUNCES
+#if defined(VALIDATE_BOUNCES) || defined(VALIDATE_VERTEX_COUNTS) || defined(PROPAGATION_DBG)
+    std::stringstream strm;
+#endif
+#ifdef VALIDATE_BOUNCES
+    bool validating_path_bounces = false;
+#endif
+    bool mask_current_cell = false; // Flag preventing self-intersection when we're bouncing out of volume cells
 #ifdef VALIDATE_VERTEX_COUNTS
     uint32_t init_vt_count = vertex_output->front;
 #endif
@@ -44,6 +55,7 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
             bool surf_found = false;
             bool ray_escaped = false;
             math::vec<3> grid_isect_pos = curr_ray.ori;
+            math::vec<3> voxel_normal = math::vec<3>(0, 0, 1);
             while (!surf_found && !ray_escaped) // We want to resolve floored voxel coordinates at least once before looking anything up
             {
                 // Resolve intersection cell each tap
@@ -51,7 +63,8 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                 uvw = rel_p / volume_nfo.transf.scale; // Normalized UVW
                 uvw_scaled = uvw * geometry::vol::width; // Voxel coordinates! :D
                 uvw_i = math::floor(uvw_scaled);
-                if (geometry::volume->test_cell_state(uvw_i) == geometry::vol::CELL_STATUS::OCCUPIED)
+                if (geometry::volume->test_cell_state(uvw_i) == geometry::vol::CELL_STATUS::OCCUPIED && !mask_current_cell) // Only allow this branch if we're currently traversing the grid (not bouncing),
+                                                                                                                            // or if we're on the zeroth bounce and we've hit a boundary cell
                 {
                     surf_found = true;
                     break;
@@ -60,7 +73,7 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                 {
                     // Find the next cell intersection, and step into it before recalculating rel_p/uvw & checking occupancy again
                     math::vec<3> input_ro = curr_ray.ori;
-                    bool cell_step_success = geometry::test_cell_intersection(curr_ray.dir, &curr_ray.ori, uvw_i);
+                    bool cell_step_success = geometry::test_cell_intersection(curr_ray.dir, &curr_ray.ori, uvw_i, &voxel_normal);
                     if (!cell_step_success) // The only way for this to happen is usually for a ray to be scattering at the boundary of the volume and refract out; if every neighbour fails
                                             // to intersect, something is probably wrong
                     {
@@ -70,10 +83,12 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                         break;
                     }
 
-//#define PROPAGATION_DBG
+                    // We've left the previous cell, so stop masking state tests here
+                    mask_current_cell = false;
+
+                    // Debug info for traversal steps
 #ifdef PROPAGATION_DBG
                     // Debug outputs for input/output ray positions
-                    std::stringstream str_strm;
                     math::vec<3> d_ro = curr_ray.ori - input_ro;
                     str_strm << "input ray position (" << input_ro.x() << "," << input_ro.y() << "," << input_ro.z() << ")\n";
                     str_strm << "output ray position (" << curr_ray.ori.x() << "," << curr_ray.ori.y() << "," << curr_ray.ori.z() << ")\n";
@@ -114,84 +129,6 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
             // Skip remaining tracing work if we've left the grid boundaries
             if (within_grid)
             {
-                // Compute normal at the final intersection site
-                // Special analytical normal solver instead of an approximation because we know each intersection will hit another cubey voxel; the uncertainty is which face we
-                // hit, and not the overall curvature at the hit site
-                /////////////////////////////////////////////////////
-
-                // Compute normal; resolve cell offset, translate it relative to the cell centre instead of the lower corner, resolve the smallest axis, then zero it;
-                // each of the remaining two axes represent a candidate normal, so pick the larger (closer) one if they're not equal (the current cell offset is clearly
-                // on a specific face of the current voxel), and take whichever one does not point into an occluded cell if they are (since solving normals this way produces
-                // singularities along voxel edges, and naively using the largest axis leads to rays being trapped when normals chosen at the edges are coplanar with the larger
-                // surface being rendered)
-                math::vec<3> cellOffs = (uvw_scaled - uvw_i) - math::vec<3>(0.5f, 0.5f, 0.5f);
-                math::vec<3> absCellOffs = math::abs(cellOffs);
-                const float min_elt = std::min(std::min(absCellOffs.x(), absCellOffs.y()), absCellOffs.z());
-                uint8_t min_axis = (min_elt >= (absCellOffs.x() - math::eps) && min_elt <= (absCellOffs.x() + math::eps)) ? 0 :
-                                   (min_elt >= (absCellOffs.y() - math::eps) && min_elt <= (absCellOffs.y() + math::eps)) ? 1 :
-                                   (min_elt >= (absCellOffs.z() - math::eps) && min_elt <= (absCellOffs.z() + math::eps)) ? 2 : 2; // If all axes are roughly equal (rare but possible) assume v ~= z
-                math::vec<3> n = cellOffs;
-                n.e[min_axis] = 0;
-                uint8_t candidate_0 = min_axis > 0 ? min_axis - 1 : 2;
-                uint8_t candidate_1 = min_axis < 2 ? min_axis + 1 : 0;
-                if (abs(n.e[candidate_0]) < (abs(n.e[candidate_1]) - math::eps))
-                {
-                    n.e[candidate_0] = 0; n = n.normalized();
-                    //assert(n.z() != 0);
-                }
-                else if (abs(n.e[candidate_1]) < (abs(n.e[candidate_0]) - math::eps))
-                {
-                    n.e[candidate_1] = 0; n = n.normalized();
-                    //assert(n.z() != 0);
-                }
-                else
-                {
-                    // Resolve cells pointed to by each candidate
-                    math::vec<3> neighbour_0 = n;
-                    math::vec<3> neighbour_1 = n;
-                    neighbour_0.e[candidate_0] = 0;
-                    neighbour_1.e[candidate_1] = 0;
-                    math::vec<3> n0 = neighbour_0.normalized();
-                    math::vec<3> n1 = neighbour_1.normalized();
-                    neighbour_0 = n0 + uvw_i;
-                    neighbour_1 = n1 + uvw_i;
-                    if ((neighbour_0.x() > geometry::vol::width || neighbour_0.x() < 0 || // Test if the zeroth neighbour lies completely outside the voxel grid
-                         neighbour_0.y() > geometry::vol::width || neighbour_0.y() < 0 ||
-                         neighbour_0.z() > geometry::vol::width || neighbour_0.z() < 0) ||
-                        (geometry::volume->test_cell_state(neighbour_0) == geometry::vol::CELL_STATUS::EMPTY)) // If not, test if the cell it points into is occupied
-                    {
-                        // Zeroth neighbour lies outside the volume, zeroth candidate normal is safe to use
-                        n = n0;
-                    }
-                    else if ((neighbour_1.x() > geometry::vol::width || neighbour_1.x() < 0 || // Test if the first neighbour lies completely outside the voxel grid
-                              neighbour_1.y() > geometry::vol::width || neighbour_1.y() < 0 ||
-                              neighbour_1.z() > geometry::vol::width || neighbour_1.z() < 0) ||
-                             (geometry::volume->test_cell_state(neighbour_1) == geometry::vol::CELL_STATUS::EMPTY))
-                    {
-                        // First neighbour lies outside the volume, first candidate normal is safe to use
-                        n = n1;
-                    }
-                    else // Both neighbours lie inside an occupied voxel; invalid, suggests something wrong with our normal math
-                         // Only hit this codepath in release mode - seems related to fp/fast and fp intrinsics compiler settings, no longer hit after turning those off
-                    {
-                        std::stringstream strm_cell_dbg;
-                        strm_cell_dbg << "source cell is " << ((geometry::volume->test_cell_state(uvw_i) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "left x-neighbour is " << ((geometry::volume->test_cell_state(uvw_i - math::vec<3>(1, 0, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "right x-neighbour is " << ((geometry::volume->test_cell_state(uvw_i + math::vec<3>(1, 0, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "top y-neighbour is " << ((geometry::volume->test_cell_state(uvw_i + math::vec<3>(0, 1, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "bottom y-neighbour is " << ((geometry::volume->test_cell_state(uvw_i - math::vec<3>(0, 1, 0)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "forward z-neighbour is " << ((geometry::volume->test_cell_state(uvw_i + math::vec<3>(0, 0, 1)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        strm_cell_dbg << "backward z-neighbour is " << ((geometry::volume->test_cell_state(uvw_i - math::vec<3>(0, 0, 1)) == geometry::vol::CELL_STATUS::EMPTY) ? "empty" : "occupied") << '\n';
-                        OutputDebugStringA(strm_cell_dbg.str().c_str());
-                        DebugBreak();
-                        n = cellOffs;
-                        n.e[candidate_0] = 0;
-                        n.e[candidate_1] = 0;
-                        n = n.normalized();
-                    }
-                    //assert(n.z() != 0);
-                }
-
                 // Sample surfaces (just lambertian diffuse for now)
                 switch (volume_nfo.mat.material_type)
                 {
@@ -211,23 +148,30 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                 else // Rays get trapped inside surfaces very frequently in release, still not sure why
                 {
                     // Map outgoing direction back from sampling-space to worldspace
-                    math::m3 nSpace = math::normalSpace(n);
+                    math::m3 nSpace = math::normalSpace(voxel_normal);
                     out_vt.dir = nSpace.apply(out_vt.dir).normalized();
-
-                    // Push outgoing rays slightly out of the surface (to help reduce shadow acne)
-                    out_vt.ori = curr_ray.ori - (curr_ray.dir * 0.001f);
+                    out_vt.ori = curr_ray.ori;
                     out_vt.mat = &volume_nfo.mat;
 
                     // Cache path vertex for integration
                     vertex_output->push(out_vt);
+#ifdef VALIDATE_BOUNCES
+#ifdef VALIDATE_BOUNCE_WORLD_COORDS
+                    strm << "bounce occurred at " << out_vt.ori.x() << "," << out_vt.ori.y() << "," << out_vt.ori.z() << "\n";
+#else
+                    strm << "bounce occurred at " << uvw_i.x() << "," << uvw_i.y() << "," << uvw_i.z() << "\n";
+#endif
+                    OutputDebugStringA(strm.str().c_str());
+#endif
 #ifdef VALIDATE_VERTEX_COUNTS
-                    std::stringstream strm;
                     strm << "vertex count " << vertex_output->front << ", initially " << init_vt_count << "\n";
                     OutputDebugStringA(strm.str().c_str());
 #endif
                     // Update current ray
                     curr_ray = out_vt;
-                    within_grid = false;
+
+                    // Mask the current voxel for the next bounce, to help prevent self-intersection
+                    mask_current_cell = true;
                 }
             }
         }
@@ -243,6 +187,14 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
             // Pass exiting rays into our path buffer
             vertex_output->push(out_vt);
             path_escaped = true;
+
+#ifdef VALIDATE_BOUNCES
+            if (validating_path_bounces)
+            {
+                strm << "ray escaped" << "\n";
+                OutputDebugStringA(strm.str().c_str());
+            }
+#endif
         }
 
         // Update bounce counter (escaped rays still bounce exactly once off the sky)
