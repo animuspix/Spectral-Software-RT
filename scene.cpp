@@ -62,7 +62,9 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                 rel_p = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f); // Relative position from lower object corner
                 uvw = rel_p / volume_nfo.transf.scale; // Normalized UVW
                 uvw_scaled = uvw * geometry::vol::width; // Voxel coordinates! :D
-                uvw_i = math::floor(uvw_scaled);
+                uvw_i = math::floor(uvw_scaled); // Possibility for explicit intersection debugging; memset every cell in [geometry.cpp], then use an SDF here to skip a subset of the volume
+                                                 // Artifacts caused by the integrator/traversal logic will show up here, but not in the slices I was considering logging from geometry.cpp
+                                                 // Artifacts caused by geometry will show up in the slices I was considering logging from geometry.cpp, but not here
                 if (geometry::volume->test_cell_state(uvw_i) == geometry::vol::CELL_STATUS::OCCUPIED && !mask_current_cell) // Only allow this branch if we're currently traversing the grid (not bouncing),
                                                                                                                             // or if we're on the zeroth bounce and we've hit a boundary cell
                 {
