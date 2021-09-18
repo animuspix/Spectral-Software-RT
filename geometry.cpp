@@ -18,7 +18,7 @@ void geometry::init()
         math::vec<3> uvw = vol::uvw_solver(i);
 //#define GEOM_DEMO_WAVES
 //#define GEOM_DEMO_STRIPES
-#define GEOM_DEMO_SPHERE // Leaving spheres and other 3D geometry until I get around to writing a better algorithm for marching within the volume grid
+#define GEOM_DEMO_SPHERE
 //#define GEOM_DEMO_CIRCLE
 #ifdef GEOM_DEMO_STRIPES
         uvw = math::floor(uvw);
@@ -83,6 +83,9 @@ void geometry::init()
         //volume->set_cell(geometry::vol::CELL_STATUS::OCCUPIED, uvw);
     }//);
 #endif
+
+    // Possible debugging helper for geometry here; build in a .png exporter, write out cells on a certain slice to black or white depending on activation status
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // Update transform metadata; eventually this should be loaded from disk
     volume->metadata.transf.pos = math::vec<3>(0.0f, 0.0f, 20.0f);
