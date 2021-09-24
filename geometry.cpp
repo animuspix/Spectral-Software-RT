@@ -193,7 +193,7 @@ bool geometry::test_cell_intersection(math::vec<3> dir, math::vec<3>* ro_inout, 
                 if (cell_vis <= 0) continue;
 
                 // Avoid testing any cells outside the defined part of the volume
-                if (math::anyGreater(target_cell, vol::width) || math::anyLesser(target_cell, 0)) continue;
+                if (math::anyGreater(target_cell, vol::max_cell_ndx_per_axis) || math::anyLesser(target_cell, 0)) continue;
 
                 // Compute an intersection test on the current neightbour; return immediately when an intersection is found
                 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -231,9 +231,21 @@ bool geometry::test_cell_intersection(math::vec<3> dir, math::vec<3>* ro_inout, 
                     intersection_plane::max(plane_dists[2], plane_dists[5])
                 };
 
+                /*
                 // Evaluate scalar min/max distances for the given ray
-                intersection_plane sT[2] = { intersection_plane::min(intersection_plane::min(plane_dists_sorted[0], plane_dists_sorted[1]), plane_dists_sorted[2]),
-                                             intersection_plane::max(intersection_plane::max(plane_dists_sorted[3], plane_dists_sorted[4]), plane_dists_sorted[5]) };
+                math::vec<2> sT = math::vec<2>(std::max(std::max(plane_dists[0].x(), plane_dists[0].y()), plane_dists[0].z()),
+                                               std::min(std::min(plane_dists[1].x(), plane_dists[1].y()), plane_dists[1].z()));
+                sT = math::vec<2>(std::min(sT.x(), sT.y()), std::max(sT.x(), sT.y())); // Keep near distance in [x], far distance in [y]
+
+                // Resolve intersection status
+                const bool isect = (plane_dists[0].x() < plane_dists[1].y() && plane_dists[0].y() < plane_dists[1].x() &&
+                                    plane_dists[0].z() < sT.y() && sT.x() < plane_dists[1].z()) && (sT.e[0] > 0); // Extend intersection test to ignore intersections behind the current ray  (where the direction
+                                                                                                                  // to the intersection point is the reverse of the current ray direction)
+                */
+
+                // Evaluate scalar min/max distances for the given ray
+                intersection_plane sT[2] = { intersection_plane::max(intersection_plane::max(plane_dists_sorted[0], plane_dists_sorted[1]), plane_dists_sorted[2]),
+                                             intersection_plane::min(intersection_plane::min(plane_dists_sorted[3], plane_dists_sorted[4]), plane_dists_sorted[5]) };
                 intersection_plane sT_min = intersection_plane::min(sT[0], sT[1]); // Keep near/far distances correctly ordered
                 intersection_plane sT_max = intersection_plane::max(sT[0], sT[1]);
                 sT[0] = sT_min;
@@ -241,7 +253,7 @@ bool geometry::test_cell_intersection(math::vec<3> dir, math::vec<3>* ro_inout, 
 
                 // Resolve intersection status
                 const bool isect = (plane_dists_sorted[0].dist < plane_dists_sorted[4].dist && plane_dists_sorted[1].dist < plane_dists_sorted[3].dist &&
-                                    plane_dists_sorted[5].dist < sT[1].dist && sT[0].dist < plane_dists_sorted[5].dist) && (sT[0].dist > 0); // Extend intersection test to ignore intersections behind the current ray (where the direction
+                                    plane_dists_sorted[2].dist < sT[1].dist && sT[0].dist < plane_dists_sorted[5].dist) && (sT[0].dist > 0); // Extend intersection test to ignore intersections behind the current ray (where the direction
                                                                                                                                              // to the intersection point is the reverse of the current ray direction)
 
                 // Write out intersection position + shared object info for successful intersections, then early-out

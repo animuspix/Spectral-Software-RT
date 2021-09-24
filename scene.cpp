@@ -9,6 +9,11 @@
 #undef min
 #undef max
 
+// Macro to print & clear debug logs
+#define DBG_PRINT(strm) \
+OutputDebugStringA(strm.str().c_str()); \
+strm.str("")
+
 // Eventually the debug outputs here will need to be multithreaded
 
 static float horizon_dist = 1000.0f;
@@ -25,13 +30,15 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
 //#define VALIDATE_VERTEX_COUNTS
 //#define PROPAGATION_DBG
 //#define VALIDATE_BOUNCES
-#if defined(VALIDATE_BOUNCES) || defined(VALIDATE_VERTEX_COUNTS) || defined(PROPAGATION_DBG)
+#define VALIDATE_BOUNDARY_SCATTERING
+#if defined(VALIDATE_BOUNCES) || defined(VALIDATE_VERTEX_COUNTS) || defined(PROPAGATION_DBG) || defined(VALIDATE_BOUNDARY_SCATTERING)
     std::stringstream strm;
 #endif
 #ifdef VALIDATE_BOUNCES
     bool validating_path_bounces = false;
 #endif
-    bool mask_current_cell = false; // Flag preventing self-intersection when we're bouncing out of volume cells
+    math::vec<3> uvw_i_prev = math::vec<3>(INFINITY, INFINITY, INFINITY);
+    //bool mask_current_cell = false; // Flag preventing self-intersection when we're bouncing out of volume cells
 #ifdef VALIDATE_VERTEX_COUNTS
     uint32_t init_vt_count = vertex_output->front;
 #endif
@@ -62,11 +69,24 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                 rel_p = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f); // Relative position from lower object corner
                 uvw = rel_p / volume_nfo.transf.scale; // Normalized UVW
                 uvw_scaled = uvw * geometry::vol::width; // Voxel coordinates! :D
-                uvw_i = math::floor(uvw_scaled); // Possibility for explicit intersection debugging; memset every cell in [geometry.cpp], then use an SDF here to skip a subset of the volume
-                                                 // Artifacts caused by the integrator/traversal logic will show up here, but not in the slices I was considering logging from geometry.cpp
-                                                 // Artifacts caused by geometry will show up in the slices I was considering logging from geometry.cpp, but not here
-                if (geometry::volume->test_cell_state(uvw_i) == geometry::vol::CELL_STATUS::OCCUPIED && !mask_current_cell) // Only allow this branch if we're currently traversing the grid (not bouncing),
-                                                                                                                            // or if we're on the zeroth bounce and we've hit a boundary cell
+                uvw_i = math::floor(uvw_scaled);
+
+                // Occasionally voxel coordinates can go negative right after intersection, due to floating-point error; make sure to handle that here
+                if (math::anyLesser(uvw_i, 0.0f))
+                {
+                    uvw_i = math::max(uvw_i, math::vec<3>(0, 0, 0));
+                    ray_escaped = true;
+                    within_grid = false;
+                    break;
+                }
+//#define VALIDATE_TRAVERSAL_ISOLATED
+#ifndef VALIDATE_TRAVERSAL_ISOLATED
+                else if (geometry::volume->test_cell_state(uvw_i) == geometry::vol::CELL_STATUS::OCCUPIED && !(math::allEqual(uvw_i, uvw_i_prev))) // Only allow this branch if we're currently traversing the grid (not bouncing),
+                                                                                                                                                   // or if we're on the zeroth bounce and we've hit a boundary cell
+#else // Optionally remove voxel state tests to check possible traversal issues in isolation
+                bool sdf_state_test = (math::vec<3>(512,512,512) - uvw_i).magnitude() < 512.0f; // Always use a sphere centered at the origin for debugging here
+                if (sdf_state_test && !mask_current_cell)
+#endif
                 {
                     surf_found = true;
                     break;
@@ -79,45 +99,66 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                     if (!cell_step_success) // The only way for this to happen is usually for a ray to be scattering at the boundary of the volume and refract out; if every neighbour fails
                                             // to intersect, something is probably wrong
                     {
+#ifdef VALIDATE_BOUNDARY_SCATTERING
+                        if (math::allGreater(uvw_i, 0.0f) && math::allLesser(uvw_i, static_cast<float>(geometry::vol::max_cell_ndx_per_axis)))
+                        {
+                            OutputDebugStringA("ray dropped within volume interior\n");
+                            strm << "testing coordinates " << uvw_i.x() << ", " << uvw_i.y() << ", " << uvw_i.z() << "\n";
+                            DBG_PRINT(strm);
+                            //DebugBreak();
+                        }
+#endif
                         uvw_i = math::max(uvw_i, math::vec<3>(0, 0, 0));
                         ray_escaped = true;
                         within_grid = false;
                         break;
                     }
 
-                    // We've left the previous cell, so stop masking state tests here
-                    mask_current_cell = false;
-
+//#define BLOCK_TRAVERSAL
+#ifdef BLOCK_TRAVERSAL
+                    ray_escaped = true;
+                    within_grid = false;
+                    break;
+#endif
                     // Debug info for traversal steps
 #ifdef PROPAGATION_DBG
+                    math::vec<3> rel_p2 = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f);
+                    math::vec<3> uvw2 = rel_p / volume_nfo.transf.scale;
+                    math::vec<3> uvw_scaled2 = uvw2 * geometry::vol::width;
+                    math::vec<3> uvw_i2 = math::floor(uvw_scaled2);
+                    if (math::anyGreater(uvw_i2, 1024.0f) || math::anyLesser(uvw_i2, 0.0f))
+                    {
+                        DebugBreak();
+                    }
                     // Debug outputs for input/output ray positions
-                    math::vec<3> d_ro = curr_ray.ori - input_ro;
-                    str_strm << "input ray position (" << input_ro.x() << "," << input_ro.y() << "," << input_ro.z() << ")\n";
-                    str_strm << "output ray position (" << curr_ray.ori.x() << "," << curr_ray.ori.y() << "," << curr_ray.ori.z() << ")\n";
-                    str_strm << "delta (" << d_ro.x() << "," << d_ro.y() << "," << d_ro.z() << ")\n\n";
+                    /*math::vec<3> d_ro = curr_ray.ori - input_ro;
+                    strm << "input ray position (" << input_ro.x() << "," << input_ro.y() << "," << input_ro.z() << ")\n";
+                    strm << "output ray position (" << curr_ray.ori.x() << "," << curr_ray.ori.y() << "," << curr_ray.ori.z() << ")\n";
+                    strm << "delta (" << d_ro.x() << "," << d_ro.y() << "," << d_ro.z() << ")\n\n";
 
                     // Debug outputs for input/output ray positions relative to the lower-left corner of the volume
                     math::vec<3> rel_p2 = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f);
                     math::vec<3> drel_p2 = rel_p2 - rel_p;
-                    str_strm << "input relative ray pos (" << rel_p.x() << "," << rel_p.y() << "," << rel_p.z() << ")\n";
-                    str_strm << "expected output relative ray pos (" << rel_p2.x() << "," << rel_p2.y() << "," << rel_p2.z() << ")\n";
-                    str_strm << "delta (" << rel_p.x() << "," << rel_p.y() << "," << rel_p.z() << ")\n\n";
+                    strm << "input relative ray pos (" << rel_p.x() << "," << rel_p.y() << "," << rel_p.z() << ")\n";
+                    strm << "expected output relative ray pos (" << rel_p2.x() << "," << rel_p2.y() << "," << rel_p2.z() << ")\n";
+                    strm << "delta (" << rel_p.x() << "," << rel_p.y() << "," << rel_p.z() << ")\n\n";
 
                     // Debug outputs for input/output voxel coordinates
                     math::vec<3> uvw2 = rel_p / volume_nfo.transf.scale;
                     math::vec<3> uvw_scaled2 = uvw2 * geometry::vol::width;
                     math::vec<3> uvw_i2 = math::floor(uvw_scaled2);
                     math::vec<3> duvw2 = uvw2 - uvw, duvw_scaled2 = uvw_scaled2 - uvw_scaled, duvw_i2 = uvw_i2 - uvw;
-                    str_strm << "input voxel coordinates, normalized (" << uvw.x() << "," << uvw.y() << "," << uvw.z() << ")"
-                             << ", scaled (" << uvw_scaled.x() << "," << uvw_scaled.y() << "," << uvw_scaled.z() << ")"
-                             << ", floored/integral (" << uvw_i.x() << "," << uvw_i.y() << "," << uvw_i.z() << ")" << "\n";
-                    str_strm << "expected output voxel coordinates, normalized (" << uvw2.x() << "," << uvw2.y() << "," << uvw2.z() << ")"
-                             << ", scaled (" << uvw_scaled2.x() << "," << uvw_scaled2.y() << "," << uvw_scaled2.z() << ")"
-                             << ", floored/integral (" << uvw_i2.x() << "," << uvw_i2.y() << "," << uvw_i2.z() << ")" << "\n";
-                    str_strm << "delta, normalized (" << duvw2.x() << "," << duvw2.y() << "," << duvw2.z()
-                             << ", scaled (" << duvw_scaled2.x() << "," << duvw_scaled2.y() << "," << duvw_scaled2.z() << ")"
-                             << ", floored/integral (" << duvw_i2.x() << "," << duvw_i2.y() << "," << duvw_i2.z() << ")" << ")\n\n";
-                    OutputDebugStringA(str_strm.str().c_str());
+                    strm << "input voxel coordinates, normalized (" << uvw.x() << "," << uvw.y() << "," << uvw.z() << ")"
+                         << ", scaled (" << uvw_scaled.x() << "," << uvw_scaled.y() << "," << uvw_scaled.z() << ")"
+                         << ", floored/integral (" << uvw_i.x() << "," << uvw_i.y() << "," << uvw_i.z() << ")" << "\n";
+                    strm << "expected output voxel coordinates, normalized (" << uvw2.x() << "," << uvw2.y() << "," << uvw2.z() << ")"
+                         << ", scaled (" << uvw_scaled2.x() << "," << uvw_scaled2.y() << "," << uvw_scaled2.z() << ")"
+                         << ", floored/integral (" << uvw_i2.x() << "," << uvw_i2.y() << "," << uvw_i2.z() << ")" << "\n";
+                    strm << "delta, normalized (" << duvw2.x() << "," << duvw2.y() << "," << duvw2.z()
+                         << ", scaled (" << duvw_scaled2.x() << "," << duvw_scaled2.y() << "," << duvw_scaled2.z() << ")"
+                         << ", floored/integral (" << duvw_i2.x() << "," << duvw_i2.y() << "," << duvw_i2.z() << ")" << ")\n\n";
+                    DBG_PRINT(strm);
+                    strm.clear();*/
 #endif
                 }
 #ifdef _DEBUG
@@ -146,7 +187,16 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                 }
 
                 // Not complex enough geometry for absorption to happen atm, process it anyways~
-                if (curr_ray.rho_weight <= math::eps) path_absorbed = true;
+                if (curr_ray.rho_weight <= math::eps)
+                {
+                    path_absorbed = true;
+#ifdef VALIDATE_BOUNCES
+                    if (validating_path_bounces)
+                    {
+                        OutputDebugStringA("ray absorbed");
+                    }
+#endif
+                }
                 else // Rays get trapped inside surfaces very frequently in release, still not sure why
                 {
                     // Map outgoing direction back from sampling-space to worldspace
@@ -162,18 +212,19 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
                     strm << "bounce occurred at " << out_vt.ori.x() << "," << out_vt.ori.y() << "," << out_vt.ori.z() << "\n";
 #else
                     strm << "bounce occurred at " << uvw_i.x() << "," << uvw_i.y() << "," << uvw_i.z() << "\n";
+                    validating_path_bounces = true;
 #endif
-                    OutputDebugStringA(strm.str().c_str());
+                    DBG_PRINT(strm);
 #endif
 #ifdef VALIDATE_VERTEX_COUNTS
                     strm << "vertex count " << vertex_output->front << ", initially " << init_vt_count << "\n";
-                    OutputDebugStringA(strm.str().c_str());
+                    DBG_PRINT(strm);
 #endif
                     // Update current ray
                     curr_ray = out_vt;
 
-                    // Mask the current voxel for the next bounce, to help prevent self-intersection
-                    mask_current_cell = true;
+                    // Record the current voxel for the next bounce, to help prevent self-intersection
+                    uvw_i_prev = uvw_i;
                 }
             }
         }
@@ -194,7 +245,7 @@ void scene::isect(path::path_vt init_vt, path* vertex_output, float* isosurf_dis
             if (validating_path_bounces)
             {
                 strm << "ray escaped" << "\n";
-                OutputDebugStringA(strm.str().c_str());
+                DBG_PRINT(strm);
             }
 #endif
         }

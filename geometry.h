@@ -14,6 +14,7 @@ public:
         static constexpr uint32_t slice_area = width * width;
         static constexpr uint32_t res = slice_area * width;
         static constexpr float cell_size = 1.0f / width;
+        static constexpr uint32_t max_cell_ndx_per_axis = width - 1;
         struct transform_nfo
         {
             math::vec<3> scale; // Bounding-box scale on x/y/z
