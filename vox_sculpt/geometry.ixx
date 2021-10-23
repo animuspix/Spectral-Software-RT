@@ -16,6 +16,14 @@ namespace geometry
         static constexpr u32 width = 1024; // All volumes are 1024 * 1024 * 1024
         static constexpr u32 slice_area = width * width;
         static constexpr u32 res = slice_area * width;
+        static constexpr u32 chunk_res_x = 4;
+        static constexpr u32 chunk_res_y = 4;
+        static constexpr u32 chunk_res_z = 4;
+        static constexpr u32 num_chunks_x = width / chunk_res_x;
+        static constexpr u32 num_chunks_y = width / chunk_res_y;
+        static constexpr u32 num_chunks_z = width / chunk_res_z;
+        static constexpr u32 num_chunks_xy = num_chunks_x * num_chunks_y;
+        static constexpr u32 num_chunks = res / (chunk_res_x * chunk_res_y * chunk_res_z);
         static constexpr float cell_size = 1.0f / width;
         static constexpr u32 max_cell_ndx_per_axis = width - 1;
         struct transform_nfo
@@ -32,25 +40,25 @@ namespace geometry
             transform_nfo transf;
         };
         vol_nfo metadata;
-        u64 cell_states[res / 64]; // One bit/cell; order is left-right/front-back/top-bottom
-                                        // front view:
-                                        // 00 01 02 03
-                                        // 16 17 18 19
-                                        // 32 33 34 35
-                                        // 48 49 50 51
-                                        // top view:
-                                        // 00 01 02 03
-                                        // 04 05 06 07
-                                        // 08 09 10 11
-                                        // 12 13 14 15
-                                        // bottom view:
-                                        // 48 49 50 51
-                                        // 52 53 54 55
-                                        // 56 57 58 59
-                                        // 60 61 62 63
-                                        // To test:
-                                        // - Evaluate cell & 0b00000000; if zero, step two cells
-                                        // - If not zero, test the bit at the current intersection and branch (either step one cell forward, or evaluate the current material)
+        u64 cell_states[num_chunks]; // One bit/cell; order is left-right/front-back/top-bottom
+                                     // front view:
+                                     // 00 01 02 03
+                                     // 16 17 18 19
+                                     // 32 33 34 35
+                                     // 48 49 50 51
+                                     // top view:
+                                     // 00 01 02 03
+                                     // 04 05 06 07
+                                     // 08 09 10 11
+                                     // 12 13 14 15
+                                     // bottom view:
+                                     // 48 49 50 51
+                                     // 52 53 54 55
+                                     // 56 57 58 59
+                                     // 60 61 62 63
+                                     // To test:
+                                     // - Evaluate cell & 0b00000000; if zero, step two cells
+                                     // - If not zero, test the bit at the current intersection and branch (either step one cell forward, or evaluate the current material)
         static constexpr u32 footprint = res + sizeof(vol_nfo);
         static u32 index_solver(vmath::vec<3> uvw_floored, u64* out_bit_ndx_mask) // Returns chunk index directly, bitmask to select the cell within the chunk in [out_bit_ndx_mask]
         {
@@ -58,9 +66,10 @@ namespace geometry
                                          (floor(fmodf(uvw_floored.y(), 4.0f)) * 16) + // Y-axis, snapped into chunk space
                                          floor(fmodf(uvw_floored.x(), 4.0f))); // X-axis, snapped into chunk space
             *out_bit_ndx_mask = 1ull << bit_ndx;
-            return static_cast<u32>((uvw_floored.x() / 4) + // Local scanline offset
-                                    (uvw_floored.y() * width / 4) + // Local slice offset
-                                    (uvw_floored.z() * slice_area / 16)); // Volume offset;
+            uvw_floored = vmath::vfloor(uvw_floored / 4.0f);
+            return static_cast<u32>(uvw_floored.x() + // Local scanline offset
+                                    (uvw_floored.y() * num_chunks_x) + // Local slice offset
+                                    (uvw_floored.z() * num_chunks_xy)); // Volume offset;
         }
         static vmath::vec<3> uvw_solver(u32 cell_ndx) // Designed for mapping [0...res] loop iterations into positions to simplify vmaths operations; not designed to work with bitfields
                                                       // and chunk indices as input
@@ -69,6 +78,15 @@ namespace geometry
             return vmath::vec<3>(static_cast<float>(single_page_ndx % width),
                                  static_cast<float>(single_page_ndx / width),
                                  static_cast<float>(cell_ndx / slice_area));
+        }
+        static vmath::vec<3> uvw_solver_chunked(u32 chunk_ndx)
+        {
+            const u32 chunked_area = num_chunks_x * num_chunks_y;
+            const u32 chunked_width = num_chunks_x;
+            u32 single_page_ndx = chunk_ndx % chunked_area;
+            return vmath::vec<3>(static_cast<float>(single_page_ndx % chunked_width),
+                                 static_cast<float>(single_page_ndx / chunked_width),
+                                 static_cast<float>(chunk_ndx / chunked_area));
         }
 
         // Helper enum & functions to quickly parse chunk/cell data for intersection tests + cell updates
@@ -85,6 +103,10 @@ namespace geometry
             if (status == CELL_STATUS::OCCUPIED) s |= bit_selector;
             else { s &= ~bit_selector; }
         }
+        void set_chunk_state(u64 state, u32 chunk_ndx)
+        {
+            cell_states[chunk_ndx] = state;
+        }
         CELL_STATUS test_cell_state(vmath::vec<3> uvw_floored)
         {
             u64 bit_selector = 0x0;
@@ -94,6 +116,23 @@ namespace geometry
             {
                 return (s & bit_selector) > 0 ? CELL_STATUS::OCCUPIED :
                                                 CELL_STATUS::EMPTY;
+            }
+            else
+            {
+                // Zero state, no voxels are set, return immediately
+                return CELL_STATUS::EMPTY;
+            }
+        }
+
+        // Just coarser-grained [test_cell_state], possibly useful for quickly skipping throuhg geometry
+        CELL_STATUS test_chunk_state(vmath::vec<3> uvw_floored)
+        {
+            u64 bit_selector = 0x0;
+            u32 chunk_ndx = index_solver(uvw_floored, &bit_selector);
+            u64 s = cell_states[chunk_ndx];
+            if (s > 0)
+            {
+                return CELL_STATUS::OCCUPIED;
             }
             else
             {
@@ -112,57 +151,91 @@ namespace geometry
         // Temporary procedural geometry - eventually this will be loaded from disk
         // Huge speedup using parallel_for here; when we begin loading from disk we should try to maintain parallelism using custom threads
         // (nine threads doing four slices at a time each, using a specialized accessor to fill/write one chunk/64 bits in each step)
-        for (u32 i = 0; i < vol::res; i++)
+        u32 chunk_ctr = 0;
+        for (u32 i = 0; i < vol::num_chunks_z; i += 1)
         {
-            vmath::vec<3> uvw = vol::uvw_solver(i);
-            //#define GEOM_DEMO_WAVES
-            //#define GEOM_DEMO_STRIPES
+            for (u32 j = 0; j < vol::num_chunks_y; j += 1)
+            {
+                for (u32 k = 0; k < vol::num_chunks_x; k += 1)
+                {
+                    vmath::vec<3> chunk_uvw = vmath::vec<3>(k, j, i);
+                    //#define GEOM_DEMO_WAVES
+                    //#define GEOM_DEMO_STRIPES
 #define GEOM_DEMO_SPHERE
 //#define GEOM_DEMO_CIRCLE
 #ifdef GEOM_DEMO_STRIPES
-                uvw = vmath::floor(uvw);
-                vol::CELL_STATUS stat_setting = ((u32)(uvw.x() / 64) % 2) ? geometry::vol::CELL_STATUS::OCCUPIED :
-                    geometry::vol::CELL_STATUS::EMPTY;
-                volume->set_cell_state(stat_setting, uvw);
+                    uvw = vmath::floor(uvw);
+                    vol::CELL_STATUS stat_setting = ((u32)(uvw.x() / 64) % 2) ? geometry::vol::CELL_STATUS::OCCUPIED :
+                        geometry::vol::CELL_STATUS::EMPTY;
+                    volume->set_cell_state(stat_setting, uvw);
 #elif defined(GEOM_DEMO_WAVES)
-                constexpr float num_waves = 8.0f;
-                constexpr float stretch = vol::width / num_waves / vmath::pi;
-                constexpr float ampli = stretch;
-                if (uvw.y() < (((std::sin(uvw.x() / stretch)) * ampli) + 512))
-                {
-                    volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, vmath::floor(uvw));
-                }
-                else
-                {
-                    volume->set_cell_state(geometry::vol::CELL_STATUS::EMPTY, vmath::floor(uvw));
-                }
+                    constexpr float num_waves = 8.0f;
+                    constexpr float stretch = vol::width / num_waves / vmath::pi;
+                    constexpr float ampli = stretch;
+                    if (uvw.y() < (((std::sin(uvw.x() / stretch)) * ampli) + 512))
+                    {
+                        volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, vmath::floor(uvw));
+                    }
+                    else
+                    {
+                        volume->set_cell_state(geometry::vol::CELL_STATUS::EMPTY, vmath::floor(uvw));
+                    }
 #elif defined(GEOM_DEMO_CIRCLE)
-                constexpr float r = 512.0f;
-                const vmath::vec<2> circOrigin(512, 512);
-                if ((circOrigin - uvw.xy()).magnitude() < r)
-                {
-                    volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, vmath::floor(uvw));
-                }
-                else
-                {
-                    volume->set_cell_state(geometry::vol::CELL_STATUS::EMPTY, vmath::floor(uvw));
-                }
+                    constexpr float r = 512.0f;
+                    const vmath::vec<2> circOrigin(512, 512);
+                    if ((circOrigin - uvw.xy()).magnitude() < r)
+                    {
+                        volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, vmath::floor(uvw));
+                    }
+                    else
+                    {
+                        volume->set_cell_state(geometry::vol::CELL_STATUS::EMPTY, vmath::floor(uvw));
+                    }
 #elif defined(GEOM_DEMO_SPHERE)
-                constexpr float r = 512.0f;
-                const vmath::vec<3> circOrigin(512, 512, 512);
-                if ((circOrigin - uvw).magnitude() < r)
-                {
-                    volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, vmath::vfloor(uvw));
-                }
-                else
-                {
-                    volume->set_cell_state(geometry::vol::CELL_STATUS::EMPTY, vmath::vfloor(uvw));
-                }
+                    constexpr float r = 512.0f;
+                    const vmath::vec<3> circOrigin(512, 512, 512);
+                    u32 x, y, z;
+                    u64 chunk = 0;
+                    for (u32 cell = 0; cell < 64; cell++)
+                    {
+                        // front view:
+                        // 00 01 02 03
+                        // 16 17 18 19
+                        // 32 33 34 35
+                        // 48 49 50 51
+                        // top view:
+                        // 00 01 02 03
+                        // 04 05 06 07
+                        // 08 09 10 11
+                        // 12 13 14 15
+                        // bottom view:
+                        // 48 49 50 51
+                        // 52 53 54 55
+                        // 56 57 58 59
+                        // 60 61 62 63
+                        x = cell % 4;
+                        y = cell / 16;
+                        z = cell / 4;
+                        vmath::vec<3> uvw_local = (chunk_uvw * vmath::vec<3>(4,4,4)) + vmath::vec<3>(x, y, z);
+                        if ((circOrigin - uvw_local).magnitude() < r) chunk |= 1ull << cell;
+                    }
+                    volume->set_chunk_state(chunk, chunk_ctr);
+                    chunk_ctr++;
 #elif defined(GEOM_DEMO_SOLID)
-                volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, uvw);
+                    volume->set_cell_state(geometry::vol::CELL_STATUS::OCCUPIED, uvw);
 #endif
-            };
+                }
+            }
+        };
 
+        // Dump middle chunks to the console for validation
+#ifdef VALIDATE_SLICE
+        const u32 slice_testing = vol::width / 2;
+        for ()
+        {
+
+        }
+#endif
         // Black-box test box set/unset code on every cell, using the stripey test pattern shown above
     //#define VALIDATE_CELL_OPS
 #ifdef VALIDATE_CELL_OPS
