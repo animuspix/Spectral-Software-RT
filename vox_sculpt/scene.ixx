@@ -173,7 +173,7 @@ export namespace scene
                         float sample[4];
                         parallel::rand_streams[tileNdx].next(sample);
                         materials::diffuse_surface_sample(&out_vt.dir, &out_vt.pdf, sample[0], sample[1]);
-                        materials::diffuse_lambert_reflection(out_vt.rho_sample, volume_nfo.mat.spectral_response, curr_ray.ori);
+                        materials::diffuse_lambert_reflection(out_vt.rho_sample, volume_nfo.mat.spectral_response, curr_ray.ori, &out_vt.power, &out_vt.rho_weight);
                         break;
                     default:
                         platform::osDebugBreak(); // Unsupported material ;_;
@@ -232,7 +232,7 @@ export namespace scene
                 out_vt.rho_weight = 1.0f;
 #else
                 out_vt.rho_weight = spectra::sky(out_vt.rho_sample, out_vt.dir.e[1]);
-                out_vt.rho_weight *= lights::sky_env(&out_vt.pdf);
+                out_vt.power *= lights::sky_env(&out_vt.pdf);
 #endif
 
                 // Pass exiting rays into our path buffer

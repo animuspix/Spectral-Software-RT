@@ -102,12 +102,9 @@ namespace tracing
                             //scene::isect(lights::sky_sample(x, y, sample[0]), lightPaths[tileNdx]);
 
                             // Integrate scene contributions (unidirectional for now)
-                            float rho, pdf, rho_weight;
-                            cameraPaths[tileNdx].resolve_path_weights(&rho, &pdf, &rho_weight); // Light/camera path merging decisions are performed while we integrate camera paths,
-                                                                                            // so we only need to resolve weights for one batch
-
-                            // Apply path probability into sample weight
-                            rho_weight *= pdf;
+                            float rho, pdf, rho_weight, power;
+                            cameraPaths[tileNdx].resolve_path_weights(&rho, &pdf, &rho_weight, &power); // Light/camera path merging decisions are performed while we integrate camera paths,
+                                                                                                        // so we only need to resolve weights for one batch
 
                             // Remove the current path from the backlog for this tile
                             // (BDPT/VCM implementation will delay this until after separately tracing every path)
@@ -119,7 +116,7 @@ namespace tracing
 
                             // Compute sensor response + apply sample weight (composite of integration weight for spectral accumulation,
                             // lens-sampled filter weight for AA, and path index weights from ray propagation)
-                            camera::sensor_response(rho, rho_weight, pixel_ndx, sample_ctr[tileNdx]);
+                            camera::sensor_response(rho, rho_weight, pdf, power, pixel_ndx, sample_ctr[tileNdx]);
 
                             // Map resolved sensor responses back into tonemapped RGB values we can store for output
                             camera::tonemap_out(pixel_ndx);

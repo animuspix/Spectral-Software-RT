@@ -24,10 +24,11 @@ export enum class material_labels
 export namespace materials
 {
     // Lambertian surfaces have constant reflection and no other spectrally-varying properties, so our spd just needs to take
-    // the current sampled frequency + barycentric coordinates (for spatially-varying colours)
-    float diffuse_lambert_reflection(float rho, vmath::fn<4, const float> surf_spd, vmath::vec<3> coords)
+    // the current sampled frequency + worldspace coordinates (for spatially-varying colours)
+    void diffuse_lambert_reflection(float rho, vmath::fn<4, const float> surf_spd, vmath::vec<3> coords, float* power, float* rho_weight)
     {
-        return surf_spd.invoke(vmath::vec<4>(coords.x(), coords.y(), coords.z(), rho)) * vmath::inv_pi;
+        *rho_weight *= surf_spd.invoke(vmath::vec<4>(coords.x(), coords.y(), coords.z(), rho));
+        *power *= vmath::inv_pi;
     }
 
     // Cosine hemisphere sampling with Malley's Method;

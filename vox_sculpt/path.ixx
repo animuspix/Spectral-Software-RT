@@ -19,6 +19,7 @@ export namespace tracing
         float rho_weight = 1.0f; // Totally dependant on the average scene SPD to be meaningful; initialize to 1 to hint that all colours
                                  // should be reflected by all rays by default
         float rho_sample = 0.5f; // Place path spectra near the white-point of our film response curve (see camera.h) by default
+        float power = 1.0f; // Lights have unit energy by default (spikes up to light source wattage for final/starting verts)
         materials::instance* mat = nullptr; // Material at the intersection point, to allow recalculating shading as needed for light/camera path connections
     };
 
@@ -35,19 +36,22 @@ export namespace tracing
                 size++;
             }
 
-            void resolve_path_weights(float* rho_out, float* pdf_out, float* response_out)
+            void resolve_path_weights(float* rho_out, float* pdf_out, float* response_out, float* power_out)
             {
                 float pdf = 1.0f;
                 float response = 1.0f;
+                float power = 1.0f;
                 *rho_out = vts[0].rho_sample;
                 for (uint32_t i = 0; i < size; i++)
                 {
                     auto& bounce = vts[i];
                     pdf *= bounce.pdf;
                     response *= bounce.rho_weight;
+                    power *= bounce.power;
                 }
                 *pdf_out = pdf;
                 *response_out = response;
+                *power_out = power;
 
                 // Force assets to render in solid colour for debugging
                 //#define HIGHLIGHT_SURFACES
