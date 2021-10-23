@@ -55,7 +55,7 @@ export namespace camera
         return tracing::path_vt(vmath::vec<3>(film_p_aa.x() - ui::image_centre_x * aa::samples_x,
                                               film_p_aa.y() - ui::image_centre_y * aa::samples_y,
                                               (ui::window_width * aa::samples_x) / vmath::ftan(FOV_RADS * 0.5f)).normalized(), // Probably don't need to normalize here, but the stability feels nice
-                                              c, 1.0f, rho, filt); // No colour-cast on exiting rays atm (except for monochrome filter weight)
+                                              c, filt, rho, 1.0f);
     }
 
     // Combination of a custom sensor response curve (see spectra.h) and a basic integration scheme
@@ -64,25 +64,25 @@ export namespace camera
     // future versions will use a more sophisticated filter with no decay (so late samples will be implicitly
     // weighted the same as early ones) and I might eventually consider performing integration in spectral space
     // instead (not 100% sure what that would look like)
-    void sensor_response(float rho, float weight, u32 ndx, u32 sample_num)
+    void sensor_response(float rho, float rho_weight, float pdf, float power, u32 ndx, u32 sample_num)
     {
         // Resolve responses per-channel
-        vmath::vec<3> rgb = spectra::film(rho);
+        vmath::vec<3> rgb = spectra::film(rho * rho_weight) * pdf * power;
 
         // Compose isolated colours into a sensor value, apply accumulated weights
         // (from path-tracing + spectral integration), write to sensor output :)
         sensel& curr_sensel = sensor_grid[ndx]; // Read in current sensor value
         if (sample_num == 1)
         {
-            curr_sensel.r = rgb.e[0] * weight;
-            curr_sensel.g = rgb.e[1] * weight;
-            curr_sensel.b = rgb.e[2] * weight;
+            curr_sensel.r = rgb.e[0];
+            curr_sensel.g = rgb.e[1];
+            curr_sensel.b = rgb.e[2];
         }
         else if (sample_num < aa::max_samples)
         {
-            curr_sensel.r += rgb.e[0] * weight;
-            curr_sensel.g += rgb.e[1] * weight;
-            curr_sensel.b += rgb.e[2] * weight;
+            curr_sensel.r += rgb.e[0];
+            curr_sensel.g += rgb.e[1];
+            curr_sensel.b += rgb.e[2];
         }
     }
 
