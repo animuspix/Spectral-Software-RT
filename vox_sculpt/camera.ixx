@@ -67,7 +67,7 @@ export namespace camera
     void sensor_response(float rho, float rho_weight, float pdf, float power, u32 ndx, u32 sample_num)
     {
         // Resolve responses per-channel
-        vmath::vec<3> rgb = spectra::film(rho * rho_weight) * pdf * power;
+        vmath::vec<3> rgb = spectra::film(rho) * rho_weight * pdf * power;
 
         // Compose isolated colours into a sensor value, apply accumulated weights
         // (from path-tracing + spectral integration), write to sensor output :)

@@ -47,7 +47,7 @@ namespace tracing
         bool tile_sampling_finished = false;
         while (draws_running->load() > 0)
         {
-            if (parallel::tiles[tileNdx].status->load() == 0)
+            if (parallel::tiles[tileNdx].messaging->load() == 0)
             {
                 // Stop rendering when we've taken all the image samples we want
                 if (sample_ctr[tileNdx] <= aa::max_samples)
@@ -89,7 +89,7 @@ namespace tracing
                             camera::tonemap_out(pixel_ndx);
 #elif defined (DEMO_FILM_RESPONSE) // Rainbow gradient test
                             u32 pixel_ndx = y * ui::window_width + x;
-                            camera::sensor_response((float)x / (float)ui::window_width, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
+                            camera::sensor_response((float)x / (float)ui::window_width, 1.0f / aa::max_samples, 1.0f, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
                             camera::tonemap_out(pixel_ndx);
 #elif defined (DEMO_SPECTRAL_PT)
                             float sample[4];
@@ -120,8 +120,8 @@ namespace tracing
 
                             // Map resolved sensor responses back into tonemapped RGB values we can store for output
                             camera::tonemap_out(pixel_ndx);
-                        }
 #endif
+                        }
                     }
                 }
                 else if (!tile_sampling_finished)
@@ -131,7 +131,7 @@ namespace tracing
                     tile_sampling_finished = true;
                 }
                 // Signal a completed sampling iteration
-                parallel::tiles[tileNdx].status->inc();
+                parallel::tiles[tileNdx].messaging->inc();
             }
         }
     }

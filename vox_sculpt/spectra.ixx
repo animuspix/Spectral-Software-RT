@@ -4,11 +4,12 @@ import vmath;
 export namespace spectra
 {
     // Super basic sky model - sharp blue fading to orange as y approaches zero
+    // Desmos visualization
+    // https://www.desmos.com/calculator/7qqnkr1uqx
     float sky(float rho, float y)
     {
-        float blue = 1.0f - vmath::fabs(0.2f - rho);
-        blue *= blue;
-        float orange = 1.0f - vmath::fabs(0.7f - rho);
+        const float blue = vmath::clamp(vmath::gaussian(rho, 0.25f, 0.18f, 0.1f, -0.75f), 0.0f, 1.0f);
+        const float orange = vmath::clamp(vmath::gaussian(rho, 0.25f, 0.7f, 0.1f, -0.75f), 0.0f, 1.0f);
         return vmath::lerp(blue, orange, vmath::fabs(y));
     }
 

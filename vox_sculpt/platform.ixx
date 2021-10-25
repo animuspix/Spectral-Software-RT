@@ -78,6 +78,12 @@ export namespace platform
             };
         };
 
+        enum thread_state
+        {
+            WORKING = 0x00000000,
+            SLEEPING = 0xffffffff
+        };
+
         class osThreadGeneric
         {
             public:
@@ -87,7 +93,9 @@ export namespace platform
                                                             // explicit templates everywhere)
             ~osThreadGeneric(){};
             void* handle; // Associated with a Win32 HANDLE in per-platform code
-            osAtomicInt* status; // Four bytes of atomic status, used for communicating with main/other threads
+            osAtomicInt* messaging; // Four bytes of atomic status, used for communicating with main/other threads
+            osAtomicInt* state; // Four bytes of thread system state, either 0x000000000 (running a task/working), 0xffffffff (between tasks/sleeping), or an error code (every other value, none defined yet)
+                                // Should be read by main and written by [this], except on thread launch
 
             // Checks if the specified thread has finished, and returns immediately if it hasn't
             //void osWaitNonblocking(osThreadGeneric* thread);
@@ -169,6 +177,9 @@ export namespace platform
         osDebugLog(txt, static_cast<u32>(written_len));
     }
     void osDebugBreak();
+    u64 osGetCurrentTimeNanoSeconds();
+    double osGetCurrentTimeMilliSeconds();
+    double osGetCurrentTimeSeconds();
     void* osMalloc(u64 size, u64 alignment);
     void osFree(void*);
     void osClearMem(void* address, u32 length);

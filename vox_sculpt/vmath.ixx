@@ -76,6 +76,15 @@ export namespace vmath
                           leftMuls.e[1] - rightMuls.e[1],
                           leftMuls.e[2] - rightMuls.e[2]);
         }
+        const float sqr_magnitude() const
+        {
+            float acc = 0;
+            for (int i = 0; i < dim; i++)
+            {
+                acc += e[i] * e[i];
+            }
+            return acc;
+        }
         const float magnitude() const
         {
             float acc = 0;

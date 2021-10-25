@@ -4,9 +4,9 @@ import vox_ints;
 
 export namespace aa
 {
-	constexpr u32 max_samples = 64;
-	constexpr u32 samples_x = 8;
-	constexpr u32 samples_y = 8;
+	constexpr u32 samples_x = 4;
+	constexpr u32 samples_y = 4;
+	constexpr u32 max_samples = samples_x * samples_y;
 	float blackman_harris_weight(vmath::vec<2> sample_xy)
 	{
 		// Transform coordinates to absolute pixel distances

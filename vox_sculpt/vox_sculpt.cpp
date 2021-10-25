@@ -39,15 +39,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // Initialize rendering systems
     mem::init();
     camera::init();
-    tracing::init();
     parallel::init();
+    tracing::init(); // Leave a gap between parallel initialization and the first system that needs access to our thread tiles,
+                     // so we avoid trying to launch work before threads are ready
     geometry::init();
-
-    // Launch drawing work
-    parallel::launch(tracing::trace);
 
     // Create the application window
     if (!ui::window_setup((void*)hInstance, nCmdShow, (void*)WndProc, szWindowClass, szTitle)) return FALSE;
+
+    // Launch drawing work
+    parallel::launch(tracing::trace);
 
     // Load window/desktop renderer
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_VOXSCULPT));
@@ -62,7 +63,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         // Just one tile at a time, so we spend less time blocking render code ^_^
         for (u8 i = 0; i < parallel::numTiles; i++)
         {
-            if (parallel::tiles[i].status->load())
+            if (parallel::tiles[i].messaging->load())
             {
                 const u16 bound_y_min = static_cast<u16>(tracing::tracing_tile_positions[i].y());
                 const u16 bound_y_max = static_cast<u16>(tracing::tracing_tile_bounds[i].y());
@@ -73,7 +74,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                     u32 offs = (j * ui::window_width) + bound_x_min;
                     memcpy(backBuf + offs, camera::digital_colors + offs, tile_width * sizeof(u32));
                 }
-                parallel::tiles[i].status->store(0);
+                parallel::tiles[i].messaging->store(0);
             }
         }
 

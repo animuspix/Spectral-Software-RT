@@ -4,11 +4,12 @@
 #include <thread>
 #include <sdkddkver.h>
 #include <Windows.h>
-#undef min;
-#undef max;
+#undef min
+#undef max
 #include "resource.h"
 #include <assert.h>
 #include <atomic>
+#include <chrono>
 import vox_ints;
 import mem;
 import platform;
@@ -63,7 +64,7 @@ struct osThreadControls
     PCRITICAL_SECTION _crit_section;
     task_type* _next_task;
     void* _work_params;
-    platform::threads::osAtomicInt* _status;
+    platform::threads::osAtomicInt* _state;
     platform::threads::thread_meta::THREAD_TYPES _type;
     platform::threads::osAtomicInt* _thread_openness;
 };
@@ -91,7 +92,7 @@ DWORD thread_main_tiles()
     PCONDITION_VARIABLE cvar = tile_controls._cvar;
     platform::threads::thread_meta::tile_thrd_fn* task = tile_controls._next_task;
     void* task_params = tile_controls._work_params;
-    platform::threads::osAtomicInt* status = tile_controls._status;
+    platform::threads::osAtomicInt* state = tile_controls._state;
     platform::threads::osAtomicInt* thread_openness = tile_controls._thread_openness;
 
     // Enter the thread's main loop
@@ -102,8 +103,9 @@ DWORD thread_main_tiles()
         if (SleepConditionVariableCS(cvar, crit, INFINITE))
         {
             platform::threads::thread_meta::tile_params* paramset = (platform::threads::thread_meta::tile_params*)task_params;
+            state->store(platform::threads::WORKING);
             ((platform::threads::thread_meta::tile_thrd_fn)*task)(paramset->workgroup_width, paramset->workgroup_height, paramset->workgroup_index);
-            //placeholder_work_tiles(paramset->workgroup_width, paramset->workgroup_height, paramset->workgroup_index);
+            state->store(platform::threads::SLEEPING);
         }
         LeaveCriticalSection(crit);
     }
@@ -167,8 +169,12 @@ void platform::threads::osInitBatchProcessors(platform::threads::osThread<platfo
             InitializeCriticalSection((LPCRITICAL_SECTION)workgroup[i].thread_guard);
 
             // Allocate & initialize task status atomic
-            workgroup[i].status = mem::allocate_tracing<platform::threads::osAtomicInt>(sizeof(platform::threads::osAtomicInt));
-            workgroup[i].status->init();
+            workgroup[i].messaging = mem::allocate_tracing<platform::threads::osAtomicInt>(sizeof(platform::threads::osAtomicInt));
+            workgroup[i].messaging->init();
+
+            // Allocate & initialize thread state atomic
+            workgroup[i].state = mem::allocate_tracing<platform::threads::osAtomicInt>(sizeof(platform::threads::osAtomicInt));
+            workgroup[i].state->init();
 
             // Allocate & initialize thread openness atomic
             workgroup[i].thread_openness = mem::allocate_tracing<platform::threads::osAtomicInt>(sizeof(platform::threads::osAtomicInt));
@@ -181,7 +187,7 @@ void platform::threads::osInitBatchProcessors(platform::threads::osThread<platfo
             tile_controls._crit_section = (PCRITICAL_SECTION)workgroup[i].thread_guard;
             tile_controls._next_task = &workgroup[i].next_task;
             tile_controls._work_params = &workgroup[i].next_task_params;
-            tile_controls._status = workgroup[i].status;
+            tile_controls._state = workgroup[i].state;
             tile_controls._type = platform::threads::thread_meta::TILE;
             tile_controls._thread_openness = workgroup[i].thread_openness;
         }
@@ -356,6 +362,23 @@ void platform::osDebugLog(char* str, u32 len_printable)
 void platform::osDebugBreak()
 {
     DebugBreak();
+}
+
+u64 platform::osGetCurrentTimeNanoSeconds()
+{
+    auto curr_t = std::chrono::high_resolution_clock::now();
+    u64 epoch_time_nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(curr_t.time_since_epoch()).count();
+    return epoch_time_nanos;
+}
+
+double platform::osGetCurrentTimeMilliSeconds()
+{
+    return static_cast<double>(osGetCurrentTimeNanoSeconds()) * 1e-3;
+}
+
+double platform::osGetCurrentTimeSeconds()
+{
+    return static_cast<double>(osGetCurrentTimeNanoSeconds()) * 1e-9;
 }
 
 void* platform::osMalloc(u64 size, u64 alignment)
