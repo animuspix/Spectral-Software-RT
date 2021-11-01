@@ -116,7 +116,7 @@ namespace geometry
             if (s > 0)
             {
                 return (s & bit_selector) > 0 ? CELL_STATUS::OCCUPIED :
-                    CELL_STATUS::EMPTY;
+                                                CELL_STATUS::EMPTY;
             }
             else
             {
@@ -166,7 +166,7 @@ namespace geometry
             {
                 for (u32 k = 0; k < vol::num_chunks_x; k += 1)
                 {
-                    vmath::vec<3> chunk_uvw = vmath::vec<3>(k, j, i) *
+                    vmath::vec<3> chunk_uvw = vmath::vec<3>((float)k, (float)j, (float)i) *
                                               vmath::vec<3>(vol::chunk_res_x,
                                                             vol::chunk_res_y,
                                                             vol::chunk_res_z); // Scale up coordinates to meet the corners of each chunk in the volume grid
@@ -201,7 +201,7 @@ namespace geometry
                                 x = cell % vol::chunk_res_x;
                                 y = cell / (vol::chunk_res_x * vol::chunk_res_y);
                                 z = cell / vol::chunk_res_x;
-                                if ((disp_from_ori - vmath::vec<3>(x, y, z)).sqr_magnitude() < r2) chunk |= 1ull << cell;
+                                if ((disp_from_ori - vmath::vec<3>((float)x, (float)y, (float)z)).sqr_magnitude() < r2) chunk |= 1ull << cell;
                             }
                         }
                         else
@@ -318,120 +318,140 @@ namespace geometry
         return false;
     }
 
-    // Test for intersections with individual cells within the grid
-    // Used for traversal within the grid, before shading occurs in each bounce/ray-step; the API takes a source cell + the bounding volume's transformation
-    // info and resolves which of the nearby cells the input ray will intersect next
-    // Since our intersection test here is basically testing each plane in order and selecting the one with the minimum distance, I decided it made sense to
-    // generate a normal as well - the numerical approximation I had before "worked", but really unreliably, and this way should hopefully be simpler + easier
-    // to debug
-    // Should create a generic box intersector with parameters for cell/world-space intersections, and call it from this + the main geometry test, instead of
-    // having duplicated code here
-    // No transform data for this version, since we're working in voxel space and converting back to worldspace afterwards
-    // Preferred to straightforward volume marching because of the potential to land inside a cell and "bounce" forever,
-    // which this method avoids (irl light flows instead of bouncing, but I do still want to have surface approximations
-    // like diffuse/spec surfaces instead of handling everything with subsurface scattering/absorption)
-    struct intersection_plane
+    // Test for intersections with individual cells within the grid, using DDA
+    // (single-cell steps within the volume grid, along a given direction)
+    // Implemented following the guide in this tutorial
+    // https://www.youtube.com/watch?v=W5P8GlaEOSI
+    // + this paper/blog
+    // https://castingrays.blogspot.com/2014/01/voxel-rendering-using-discrete-ray.html
+    // many thanks to the creators of both <3
+    export bool cell_step(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vmath::vec<3> uvw_in, vmath::vec<3>* uvw_i_inout, vmath::vec<3>* n_out, bool primary_ray)
     {
-        float dist;
-        vmath::vec<3> n;
-        intersection_plane(float _dist, vmath::vec<3> _n) : dist(_dist), n(_n) {}
-        static intersection_plane min(intersection_plane lhs, intersection_plane rhs)
+        // Safety test!
+        // Make sure any rays that enter this function have safe starting values
+        // Also validate against error cases (incoming coordinates more than one unit from a boundary)
+        vmath::vec<3> uvw_floored = *uvw_i_inout;
+        const vmath::vec<3> bounds_dist_max = uvw_in - vmath::vec<3>(vol::width, vol::width, vol::width);
+        const vmath::vec<3> bounds_dist_min = vmath::vec<3>(0.0f, 0.0f, 0.0f) - uvw_floored;
+        if (vmath::anyGreater(bounds_dist_max, 0.0f) || vmath::anyGreater(bounds_dist_min, -1.0f)) // coordinates equal to vol::width are still out of bounds :p
         {
-            return lhs.dist > rhs.dist ? rhs : lhs;
-        }
-        static intersection_plane max(intersection_plane lhs, intersection_plane rhs)
-        {
-            return lhs.dist > rhs.dist ? lhs : rhs;
-        }
-    };
-    export bool test_cell_intersection(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vmath::vec<3> src_cell_uvw, vmath::vec<3>* n_out)
-    {
-        // Cache fixed transform values
-        const vmath::vec<3> extents = vmath::vec<3>(0.5f, 0.5f, 0.5f); // Extents from object origin
-
-        // Walk through each neighbour of the given cell
-        for (i32 i = -1; i <= 1; i++)
-        {
-            for (i32 j = -1; j <= 1; j++) // Grr? Not totally certain how to optimize this, I don't think naive loop unrolling will be enough
+            // Something funky, bad coordinates or generating coordinates when we're outside the scene bounding box
+//#define VALIDATE_CELL_RANGES
+#ifdef VALIDATE_CELL_RANGES
+            if (vmath::anyGreater(bounds_dist_max, 1.0f) || vmath::anyGreater(bounds_dist_min, -1.0f))
             {
-                for (i32 k = -1; k <= 1; k++)
+                platform::osDebugBreak();
+            }
+#endif
+
+            // Most cases will be regular rounding error :D
+            vmath::clamp(uvw_in, vmath::vec<3>(0.0f), vmath::vec<3>(vol::width-1));
+            vmath::clamp(uvw_floored, vmath::vec<3>(0.0f), vmath::vec<3>(vol::width-1));
+        }
+
+        // We only traverse primary rays with an empty starting cell (since otherwise we can return immediately)
+        // For non-primary rays (bounce rays) we ignore the starting cell and iterate through any others along the ray
+        // direction
+        bool traversing = primary_ray ? volume->test_cell_state(*uvw_i_inout) == vol::CELL_STATUS::EMPTY : true;
+
+        // Core traversal loop/immediate return
+        if (traversing)
+        {
+            // Compute change in uvw per-axis
+            const vmath::vec<3> d_uvw = vmath::vsgn(dir);
+
+            // Compute x/y/z-derivatives
+            const vmath::vec<3> safe_dir_axes = vmath::vmax(vmath::vabs(dir), vmath::vec<3>(0.01f)) * d_uvw;
+            const vmath::vec<3> g = vmath::vec<3>((dir / safe_dir_axes.e[0]).magnitude(), // Scalarized directional derivative relative to x
+                                                  (dir / safe_dir_axes.e[1]).magnitude(), // Scalarized directional derivative relative to y
+                                                  (dir / safe_dir_axes.e[2]).magnitude()); // Scalarized directional derivative realtive to z
+
+            // Distances to the first cell interval/boundary
+            vmath::vec<3> t = vmath::vec<3>((dir.e[0] >= 0 ? (uvw_floored.e[0] + 1.0f - uvw_in.e[0]) : uvw_in.e[0] - uvw_floored.e[0]) * g.e[0],
+                                            (dir.e[1] >= 0 ? (uvw_floored.e[1] + 1.0f - uvw_in.e[1]) : uvw_in.e[1] - uvw_floored.e[1]) * g.e[1],
+                                            (dir.e[2] >= 0 ? (uvw_floored.e[2] + 1.0f - uvw_in.e[2]) : uvw_in.e[2] - uvw_floored.e[2]) * g.e[2]);
+
+            // DDA
+            u8 min_axis = 0; // Smallest axis in our traversal vector, used to determine which direction to step through in each tap
+            bool cell_found = false;
+            while (!cell_found)
+            {
+                // Eventually should run a coarse test per-chunk here, followed by a fine test for nonzero chunks
+                // (doable by modifying the step size & switching between testing at the chunk level vs testing at the voxel level,
+                // much cheaper than nested loops)
+                /////////////////////////////////////////////////////////////////////////////////////////////////
+
+                // Minimize divergence from the ideal path through [dir] by always incrementing our smallest axis
+                min_axis = t.x() < t.y() && t.x() < t.z() ? 0 :
+                           t.y() < t.x() && t.y() < t.z() ? 1 :
+                           /* d_pos.x() < d_pos.y() || d_pos.x() <= d_pos.z() */ 2 /* : 0*/;
+
+                // We want to weight each continuous step by its axis' contribution to the slope of the ray direction
+                t.e[min_axis] += g.e[min_axis];
+
+                // Update our current voxel coordinate
+                uvw_floored.e[min_axis] += d_uvw.e[min_axis];
+
+                // Ray escaped the volume :o
+                if (vmath::anyGreater(uvw_floored, vol::width - 1) || vmath::anyLesser(uvw_floored, 0))
                 {
-                    // Avoid testing our home cell
-                    if (i == 0 && j == 0 && k == 0) continue;
+                    uvw_floored = vmath::clamp(uvw_floored, vmath::vec<3>(0, 0, 0), vmath::vec<3>(vol::width-1, vol::width-1, vol::width-1));
+                    cell_found = false;
+                    break;
+                }
 
-                    // Otherwise resolve the target cell
-                    vmath::vec<3> cell_offs = vmath::vec<3>((float)i, (float)j, (float)k);
-                    vmath::vec<3> target_cell = src_cell_uvw + cell_offs;
-
-                    // Avoid testing any cells in the opposite direction the ray (since we don't care about them anyways)
-                    const float cell_vis = dir.dot(cell_offs.normalized());
-                    if (cell_vis <= 0) continue;
-
-                    // Avoid testing any cells outside the defined part of the volume
-                    if (vmath::anyGreater(target_cell, vol::max_cell_ndx_per_axis) || vmath::anyLesser(target_cell, 0)) continue;
-
-                    // Compute an intersection test on the current neightbour; return immediately when an intersection is found
-                    ///////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-                    // Intersection vmath adapted from
-                    // https://www.shadertoy.com/view/ltKyzm, itself adapted from the Scratchapixel tutorial here:
-                    // https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
-
-                    // Synthesize box boundaries
-                    const vmath::vec<3> boundsMin = (target_cell - extents);
-                    const vmath::vec<3> boundsMax = (target_cell + extents);
-
-                    // Evaluate per-axis distances to each plane in the box
-                    // Not super sure why these divisions happen?
-                    // Should probably reread vmath for all this in general
-                    intersection_plane plane_dists[6] =
-                    {
-                        intersection_plane((boundsMin.x() - src_cell_uvw.x()) / dir.x(), vmath::vec<3>(-1,0,0)),
-                        intersection_plane((boundsMin.y() - src_cell_uvw.y()) / dir.y(), vmath::vec<3>(0,-1,0)),
-                        intersection_plane((boundsMin.z() - src_cell_uvw.z()) / dir.z(), vmath::vec<3>(0,0,-1)),
-                        ///////////////////////////////////////////////////////////////////////////////////////
-                        intersection_plane((boundsMax.x() - src_cell_uvw.x()) / dir.x(), vmath::vec<3>(1,0,0)),
-                        intersection_plane((boundsMax.y() - src_cell_uvw.y()) / dir.y(), vmath::vec<3>(0,1,0)),
-                        intersection_plane((boundsMax.z() - src_cell_uvw.z()) / dir.z(), vmath::vec<3>(0,0,1)),
-                    };
-
-                    // Keep min/max distances correctly ordered
-                    intersection_plane plane_dists_sorted[6] =
-                    {
-                        intersection_plane::min(plane_dists[0], plane_dists[3]),
-                        intersection_plane::min(plane_dists[1], plane_dists[4]),
-                        intersection_plane::min(plane_dists[2], plane_dists[5]),
-                        intersection_plane::max(plane_dists[0], plane_dists[3]),
-                        intersection_plane::max(plane_dists[1], plane_dists[4]),
-                        intersection_plane::max(plane_dists[2], plane_dists[5])
-                    };
-
-                    // Evaluate scalar min/max distances for the given ray
-                    intersection_plane sT[2] = { intersection_plane::max(intersection_plane::max(plane_dists_sorted[0], plane_dists_sorted[1]), plane_dists_sorted[2]),
-                                                 intersection_plane::min(intersection_plane::min(plane_dists_sorted[3], plane_dists_sorted[4]), plane_dists_sorted[5]) };
-                    intersection_plane sT_min = intersection_plane::min(sT[0], sT[1]); // Keep near/far distances correctly ordered
-                    intersection_plane sT_max = intersection_plane::max(sT[0], sT[1]);
-                    sT[0] = sT_min;
-                    sT[1] = sT_max;
-
-                    // Resolve intersection status
-                    const bool isect = (plane_dists_sorted[0].dist < plane_dists_sorted[4].dist&& plane_dists_sorted[1].dist < plane_dists_sorted[3].dist&&
-                                        plane_dists_sorted[2].dist < sT[1].dist&& sT[0].dist < plane_dists_sorted[5].dist) && (sT[0].dist > 0); // Extend intersection test to ignore intersections behind the current ray (where the direction
-                                                                                                                                                // to the intersection point is the reverse of the current ray direction)
-
-                    // Write out intersection position + shared object info for successful intersections, then early-out
-                    if (isect)
-                    {
-                        *n_out = sT[0].n;
-                        *ro_inout = *ro_inout + (dir * sT[0].dist * vol::cell_size * volume->metadata.transf.scale); // Update world-space position, after converting displacement from voxel space
-                                                                                                                     // (scale once for cell size, again for volume scale)
-                        return true;
-                    }
+                // Successful intersection :D
+                if (volume->test_cell_state(uvw_floored) == vol::CELL_STATUS::OCCUPIED)
+                {
+                    cell_found = true;
+                    break;
                 }
             }
-        }
 
-        // Only possible way to get here is by failing to find an intersection above
-        return false;
+            // Outputs :D
+            // Only need to write these if we've traversed the grid, since they'll be the same as our inputs
+            // otherwise
+            ////////////////////////////////////////////////////////////////////////////////////////////////
+
+            // Derive normal from most recent step (thanks nightchild from GP!)
+            *n_out = min_axis == 0 ? vmath::vec<3>(-d_uvw.e[0], 0.0f, 0.0f) :
+                     min_axis == 1 ? vmath::vec<3>(0.0f, -d_uvw.e[1], 0.0f) :
+                     /*min_axis == 2 ? */vmath::vec<3>(0.0f, 0.0f, -d_uvw.e[2])/* : vmath::vec<3>(0, 0, -1.0f)*/;
+
+            // Output integer UVW coordinate
+            // We've already clamped it if we needed to, so a direct copy here is fine
+            *uvw_i_inout = uvw_floored;
+
+            // Calculate worldspace position delta, then update output coordinate
+            /////////////////////////////////////////////////////////////////////
+
+            // Reverse of the math we did in [scene.ixx] to resolve intersected voxel coordinates
+            /////////////////////////////////////////////////////////////////////////////////////
+
+            // Original math from [scene.ixx]
+            //rel_p = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f); // Relative position from lower object corner
+            //uvw = rel_p / volume_nfo.transf.scale; // Normalized UVW
+            //uvw_scaled = uvw * geometry::vol::width; // Voxel coordinates! :D
+
+            // Reversed math
+            vmath::vec<3> ro = uvw_floored;// + (dir * t.magnitude()); // Apply position delta
+            ro /= vol::width; // Back to UVW space (0...1)
+            ro *= volume->metadata.transf.scale; // Back to object space
+            ro -= volume->metadata.transf.scale * 0.5f; // Position relative to centre, not lower corner
+            ro += volume->metadata.transf.pos; // Back to worldspace :D
+            ro = vmath::clamp(ro,
+                              vmath::vec<3>(volume->metadata.transf.pos - volume->metadata.transf.scale * 0.5f),
+                              vmath::vec<3>(volume->metadata.transf.pos + volume->metadata.transf.scale * 0.5f));
+            *ro_inout = ro;
+
+            // Return cell discovery state
+            // Failure isn't a scary error case anymore - just means that we bounced out of the volume :)
+            return cell_found;
+        }
+        else
+        {
+            // If we're testing a primary ray, and the current UVW coordinate is filled, we've instantly found a cell :p
+            return true;
+        }
     }
 };

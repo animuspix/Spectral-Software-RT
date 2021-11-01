@@ -10,6 +10,12 @@ import materials;
 import spectra;
 import lights;
 
+// Project is now too complex for regular debug mode
+// oof
+//#define SCN_DBG
+#ifdef SCN_DBG
+#pragma optimize("", off)
+#endif
 export namespace scene
 {
     // Traverse the scene, pass path vertices back up to our pipeline so they can be integrated separately from scene traversal
@@ -32,7 +38,6 @@ export namespace scene
 #ifdef VALIDATE_BOUNCES
         bool validating_path_bounces = false;
 #endif
-        vmath::vec<3> uvw_i_prev = vmath::vec<3>(9999.9f, 9999.9f, 9999.9f);
         //bool mask_current_cell = false; // Flag preventing self-intersection when we're bouncing out of volume cells
 #ifdef VALIDATE_VERTEX_COUNTS
         u32 init_vt_count = vertex_output->front;
@@ -53,115 +58,55 @@ export namespace scene
                     curr_ray.ori += curr_ray.dir * *isosurf_dist;
                 }
 
+                // Sometimes rays land "outside" the volume because of floating-point error; normalize those cases here
+                curr_ray.ori = vmath::clamp(curr_ray.ori,
+                                            vmath::vec<3>(volume_nfo.transf.pos - volume_nfo.transf.scale * 0.5f),
+                                            vmath::vec<3>(volume_nfo.transf.pos + volume_nfo.transf.scale * 0.5f));
+
                 // March from the current position to the first cell with non-zero state
-                bool surf_found = false;
-                bool ray_escaped = false;
-                vmath::vec<3> grid_isect_pos = curr_ray.ori;
-                vmath::vec<3> voxel_normal = vmath::vec<3>(0, 0, 1);
-                while (!surf_found && !ray_escaped) // We want to resolve floored voxel coordinates at least once before looking anything up
+                ////////////////////////////////////////////////////////////////////////
+
+                // Initialize useful variables
+                bool surf_found = false; // Traversal control switch; testing the whole grid up here means that not finding a surface is equivalent to having a ray escape
+                const vmath::vec<3> grid_isect_pos = curr_ray.ori; // Cached intersection position to allow resolving exact primary ray distance later on
+                vmath::vec<3> voxel_normal = vmath::vec<3>(0, 0, -1); // Normals, initialized to something mostly safe (for the default z-aligned view anyways)
+
+                // Resolve intersection cell each tap
+                rel_p = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f); // Relative position from lower object corner
+                uvw = rel_p / volume_nfo.transf.scale; // Normalized UVW
+                uvw_scaled = uvw * geometry::vol::width; // Voxel coordinates! :D
+                uvw_i = vmath::vfloor(uvw_scaled);
+
+                // Find the next cell intersection, and step into it before recalculating rel_p/uvw & checking occupancy again
+                // Using DDA means that cell steps travel directly to geometry, so any stepping failures mean that our rays leave geometry completely
+//#define VALIDATE_STEPPED_RO
+#ifdef VALIDATE_STEPPED_RO
+                vmath::vec<3> ro_input = curr_ray.ori;
+#endif
+                const bool cell_step_success = geometry::cell_step(curr_ray.dir, &curr_ray.ori, uvw_scaled, &uvw_i, &voxel_normal, first_grid_hit);
+                if (!cell_step_success) // No intersections along the given direction :(
                 {
-                    // Resolve intersection cell each tap
-                    rel_p = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f); // Relative position from lower object corner
-                    uvw = rel_p / volume_nfo.transf.scale; // Normalized UVW
-                    uvw_scaled = uvw * geometry::vol::width; // Voxel coordinates! :D
-                    uvw_i = vmath::vfloor(uvw_scaled);
-
-                    // Occasionally voxel coordinates can go negative right after intersection, due to floating-point error; make sure to handle that here
-                    if (vmath::anyLesser(uvw_i, 0.0f))
-                    {
-                        uvw_i = vmath::vmax(uvw_i, vmath::vec<3>(0, 0, 0));
-                        ray_escaped = true;
-                        within_grid = false;
-                        break;
-                    }
-                    //#define VALIDATE_TRAVERSAL_ISOLATED
-#ifndef VALIDATE_TRAVERSAL_ISOLATED
-                    else if (geometry::volume->test_cell_state(uvw_i) == geometry::vol::CELL_STATUS::OCCUPIED && !(vmath::allEqual(uvw_i, uvw_i_prev))) // Only allow this branch if we're currently traversing the grid (not bouncing),
-                                                                                                                                                       // or if we're on the zeroth bounce and we've hit a boundary cell
-#else // Optionally remove voxel state tests to check possible traversal issues in isolation
-                    bool sdf_state_test = (vmath::vec<3>(512, 512, 512) - uvw_i).magnitude() < 512.0f; // Always use a sphere centered at the origin for debugging here
-                    if (sdf_state_test && !mask_current_cell)
-#endif
-                    {
-                        surf_found = true;
-                        break;
-                    }
-                    else
-                    {
-                        // Find the next cell intersection, and step into it before recalculating rel_p/uvw & checking occupancy again
-                        vmath::vec<3> input_ro = curr_ray.ori;
-                        bool cell_step_success = geometry::test_cell_intersection(curr_ray.dir, &curr_ray.ori, uvw_i, &voxel_normal);
-                        if (!cell_step_success) // The only way for this to happen is usually for a ray to be scattering at the boundary of the volume and refract out; if every neighbour fails
-                                                // to intersect, something is probably wrong
-                        {
-#ifdef VALIDATE_BOUNDARY_SCATTERING
-                            if (vmath::allGreater(uvw_i, 0.0f) && vmath::allLesser(uvw_i, static_cast<float>(geometry::vol::max_cell_ndx_per_axis)))
-                            {
-                                parallel::append_tile_log(tileNdx, "ray dropped within volume interior\n");
-                                parallel::append_tile_log(tileNdx, "testing coordinates %f, %f, %f\n", uvw_i.x(), uvw_i.y(), uvw_i.z());
-                                //platform::osDebugBreak();
-                            }
-#endif
-                            uvw_i = vmath::vmax(uvw_i, vmath::vec<3>(0, 0, 0));
-                            ray_escaped = true;
-                            within_grid = false;
-                            break;
-                        }
-
-                        //#define BLOCK_TRAVERSAL
-#ifdef BLOCK_TRAVERSAL
-                        ray_escaped = true;
-                        within_grid = false;
-                        break;
-#endif
-                        // Debug info for traversal steps
-#ifdef PROPAGATION_DBG
-                        vmath::vec<3> rel_p2 = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f);
-                        vmath::vec<3> uvw2 = rel_p / volume_nfo.transf.scale;
-                        vmath::vec<3> uvw_scaled2 = uvw2 * geometry::vol::width;
-                        vmath::vec<3> uvw_i2 = vmath::floor(uvw_scaled2);
-                        if (vmath::anyGreater(uvw_i2, 1024.0f) || vmath::anyLesser(uvw_i2, 0.0f))
-                        {
-                            platform::osDebugBreak();
-                        }
-                        // Debug outputs for input/output ray positions
-                        /*vmath::vec<3> d_ro = curr_ray.ori - input_ro;
-                        strm << "input ray position (" << input_ro.x() << "," << input_ro.y() << "," << input_ro.z() << ")\n";
-                        strm << "output ray position (" << curr_ray.ori.x() << "," << curr_ray.ori.y() << "," << curr_ray.ori.z() << ")\n";
-                        strm << "delta (" << d_ro.x() << "," << d_ro.y() << "," << d_ro.z() << ")\n\n";
-
-                        // Debug outputs for input/output ray positions relative to the lower-left corner of the volume
-                        vmath::vec<3> rel_p2 = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f);
-                        vmath::vec<3> drel_p2 = rel_p2 - rel_p;
-                        strm << "input relative ray pos (" << rel_p.x() << "," << rel_p.y() << "," << rel_p.z() << ")\n";
-                        strm << "expected output relative ray pos (" << rel_p2.x() << "," << rel_p2.y() << "," << rel_p2.z() << ")\n";
-                        strm << "delta (" << rel_p.x() << "," << rel_p.y() << "," << rel_p.z() << ")\n\n";
-
-                        // Debug outputs for input/output voxel coordinates
-                        vmath::vec<3> uvw2 = rel_p / volume_nfo.transf.scale;
-                        vmath::vec<3> uvw_scaled2 = uvw2 * geometry::vol::width;
-                        vmath::vec<3> uvw_i2 = vmath::floor(uvw_scaled2);
-                        vmath::vec<3> duvw2 = uvw2 - uvw, duvw_scaled2 = uvw_scaled2 - uvw_scaled, duvw_i2 = uvw_i2 - uvw;
-                        strm << "input voxel coordinates, normalized (" << uvw.x() << "," << uvw.y() << "," << uvw.z() << ")"
-                             << ", scaled (" << uvw_scaled.x() << "," << uvw_scaled.y() << "," << uvw_scaled.z() << ")"
-                             << ", floored/integral (" << uvw_i.x() << "," << uvw_i.y() << "," << uvw_i.z() << ")" << "\n";
-                        strm << "expected output voxel coordinates, normalized (" << uvw2.x() << "," << uvw2.y() << "," << uvw2.z() << ")"
-                             << ", scaled (" << uvw_scaled2.x() << "," << uvw_scaled2.y() << "," << uvw_scaled2.z() << ")"
-                             << ", floored/integral (" << uvw_i2.x() << "," << uvw_i2.y() << "," << uvw_i2.z() << ")" << "\n";
-                        strm << "delta, normalized (" << duvw2.x() << "," << duvw2.y() << "," << duvw2.z()
-                             << ", scaled (" << duvw_scaled2.x() << "," << duvw_scaled2.y() << "," << duvw_scaled2.z() << ")"
-                             << ", floored/integral (" << duvw_i2.x() << "," << duvw_i2.y() << "," << duvw_i2.z() << ")" << ")\n\n";
-                        DBG_PRINT(strm);
-                        strm.clear();*/
-#endif
-                    }
-#ifdef _DEBUG
-                    platform::osAssertion(uvw_i.x() >= 0.0f && uvw_i.y() >= 0.0f && uvw_i.z() >= 0.0f); // Voxel coordinates should never be negative
-#endif
+                    uvw_i = vmath::vmax(uvw_i, vmath::vec<3>(0, 0, 0));
+                    within_grid = false;
                 }
+                /*else
+                {
+                    // Intersection found :D
+                    // We can move on to sampling the current bounce further down
+                }*/
+
+#ifdef VALIDATE_STEPPED_RO
+                if (vmath::anyGreater(curr_ray.ori, geometry::vol::width - 1) || vmath::anyLesser(curr_ray.ori, -2.0f))
+                {
+                    platform::osDebugBreak();
+                }
+#endif
 
                 // Update isosurface distances on first grid intersections
-                if (first_grid_hit) *isosurf_dist = (curr_ray.ori - grid_isect_pos).magnitude();
+                if (first_grid_hit)
+                {
+                    *isosurf_dist = (curr_ray.ori - grid_isect_pos).magnitude();
+                }
 
                 // Skip remaining tracing work if we've left the grid boundaries
                 if (within_grid)
@@ -169,31 +114,34 @@ export namespace scene
                     // Sample surfaces (just lambertian diffuse for now)
                     switch (volume_nfo.mat.material_type)
                     {
-                    case material_labels::DIFFUSE:
-                        float sample[4];
-                        parallel::rand_streams[tileNdx].next(sample);
-                        materials::diffuse_surface_sample(&out_vt.dir, &out_vt.pdf, sample[0], sample[1]);
-                        materials::diffuse_lambert_reflection(out_vt.rho_sample, volume_nfo.mat.spectral_response, curr_ray.ori, &out_vt.power, &out_vt.rho_weight);
-                        break;
-                    default:
-                        platform::osDebugBreak(); // Unsupported material ;_;
-                        break;
+                        case material_labels::DIFFUSE:
+                            float sample[4];
+                            parallel::rand_streams[tileNdx].next(sample);
+                            materials::diffuse_surface_sample(&out_vt.dir, &out_vt.pdf, sample[0], sample[1]);
+                            materials::diffuse_lambert_reflection(out_vt.rho_sample, volume_nfo.mat.spectral_response, curr_ray.ori, &out_vt.power, &out_vt.rho_weight);
+                            break;
+                        default:
+                            platform::osDebugBreak(); // Unsupported material ;_;
+                            break;
                     }
 
-                    // Not complex enough geometry for absorption to happen atm, process it anyways~
-                    if (curr_ray.rho_weight <= vmath::eps)
+                    // Process absorption/extinction, either spectral (zero rho_weight), volumetric/environmental (zero power), or statistical
+                    // (zero probability)
+                    // Technically this should be unnecessary with a solid diffuse volume...but my voxels are so small that I'm getting precision issues
+                    // on which normals to use and seeing rays intermittently get lost inside the surface. It feels better to give in reality there and
+                    // treat my voxels like diffuse flakes instead of trying to force them into clean boxes that never experience translucency
+                    // (it's definitely not physically accurate translucency but eh, like, self-intersections seem quite rare, I'm not sure how problematic
+                    // that will be in practice)
+                    if (curr_ray.rho_weight <= vmath::eps ||
+                        curr_ray.power <= vmath::eps ||
+                        curr_ray.pdf <= vmath::eps)
                     {
                         path_absorbed = true;
-#ifdef VALIDATE_BOUNCES
-                        if (validating_path_bounces)
-                        {
-                            parallel::append_tile_log(tileNdx, "ray absorbed");
-                        }
-#endif
                     }
-                    else // Rays get trapped inside surfaces very frequently in release, still not sure why
+                    else
                     {
                         // Map outgoing direction back from sampling-space to worldspace
+                        //platform::osDebugLogFmt("voxel intersected with normal %f, %f, %f\n", voxel_normal.x(), voxel_normal.y(), voxel_normal.z());
                         vmath::m3 nSpace = vmath::normalSpace(voxel_normal);
                         out_vt.dir = nSpace.apply(out_vt.dir).normalized();
                         out_vt.ori = curr_ray.ori;
@@ -214,9 +162,6 @@ export namespace scene
 #endif
                         // Update current ray
                         curr_ray = out_vt;
-
-                        // Record the current voxel for the next bounce, to help prevent self-intersection
-                        uvw_i_prev = uvw_i;
                     }
                 }
             }
@@ -252,3 +197,6 @@ export namespace scene
         }
     }
 };
+#ifdef SCN_DBG
+#pragma optimize("", on)
+#endif

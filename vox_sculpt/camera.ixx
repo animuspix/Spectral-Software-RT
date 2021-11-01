@@ -43,19 +43,24 @@ export namespace camera
     constexpr float FOV_RADS = vmath::pi * 0.5f;
     export tracing::path_vt lens_sample(float film_x, float film_y, float rand_u, float rand_v, float rho)
     {
-        // Jitter supersampled coordinates
-        const vmath::vec<2> film_p_aa = aa::jitter(film_x,
-                                                   film_y,
-                                                   rand_u, rand_v);
+        // Compute supersampled coordinates
+        vmath::vec<2> film_xy = aa::supersample(film_x, film_y);
+
+        // Compute local sample coordinate
+        const vmath::vec<2> subpx_xy = aa::jitter(rand_u, rand_v);
+
         // Compute filter weight
-        float filt = aa::blackman_harris_weight(film_p_aa - vmath::vec<2>(film_x * aa::samples_x, film_y * aa::samples_y));
+        float filt = aa::blackman_harris_weight(subpx_xy);
+
+        // Apply sample offset into film offset
+        film_xy += subpx_xy;
 
         // Return weighted lens direction :D
         const vmath::vec<3> c = camera_pos();
-        return tracing::path_vt(vmath::vec<3>(film_p_aa.x() - ui::image_centre_x * aa::samples_x,
-                                              film_p_aa.y() - ui::image_centre_y * aa::samples_y,
+        return tracing::path_vt(vmath::vec<3>(film_xy.x() - ui::image_centre_x * aa::samples_x,
+                                              film_xy.y() - ui::image_centre_y * aa::samples_y,
                                               (ui::window_width * aa::samples_x) / vmath::ftan(FOV_RADS * 0.5f)).normalized(), // Probably don't need to normalize here, but the stability feels nice
-                                              c, filt, rho, 1.0f);
+                                              c, 1.0f / filt, rho, 1.0f);
     }
 
     // Combination of a custom sensor response curve (see spectra.h) and a basic integration scheme

@@ -48,6 +48,9 @@ export namespace tracing
                     pdf *= bounce.pdf;
                     response *= bounce.rho_weight;
                     power *= bounce.power;
+
+                    // Process angular energy loss between vertices (the last cos(theta) in the rendering equation)
+                    //if (i < (size - 1)) power *= vts[i].dir.dot(vts[i + 1].dir);
                 }
                 *pdf_out = pdf;
                 *response_out = response;

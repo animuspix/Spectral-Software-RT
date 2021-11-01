@@ -3,6 +3,10 @@ export module vmath;
 import platform;
 import <concepts>;
 
+//#define MATH_DBG
+#ifdef MATH_DBG
+#pragma optimize("", off)
+#endif
 export namespace vmath
 {
     // Useful constants
@@ -66,12 +70,12 @@ export namespace vmath
         vec<3> cross(vec<3> u)
         {
             static_assert(dim == 3, "The cross product is only meaningful in three dimensions - the wedge product is interesting & more general but i haven't found a use-case for it here yet");
-            vec<3> leftMuls(e[0] * u.e[1],
-                            e[1] * u.e[2],
-                            e[2] * u.e[0]);
-            vec<3> rightMuls(e[1] * u.e[0],
-                             e[2] * u.e[1],
-                             e[0] * u.e[2]);
+            vec<3> leftMuls(e[1] * u.e[2],
+                            e[2] * u.e[0],
+                            e[0] * u.e[1]);
+            vec<3> rightMuls(e[2] * u.e[1],
+                             e[0] * u.e[2],
+                             e[1] * u.e[0]);
             return vec<3>(leftMuls.e[0] - rightMuls.e[0],
                           leftMuls.e[1] - rightMuls.e[1],
                           leftMuls.e[2] - rightMuls.e[2]);
@@ -148,26 +152,29 @@ export namespace vmath
         }
         vec<3> apply(vec<3> v) // matrix x vector product
         {
-            return vec<3>(v.dot(X),
-                v.dot(Y),
-                v.dot(Z));
+            const vec<3> xT(X.x(), Y.x(), Z.x()); // Implicit transpose, we have to be computing rows x columns and not rows x rows
+            const vec<3> yT(X.y(), Y.y(), Z.y());
+            const vec<3> zT(X.z(), Y.z(), Z.z());
+            return vec<3>(v.dot(xT),
+                          v.dot(yT),
+                          v.dot(zT));
         }
         m3 chain_with(m3 m) // matrix x matrix proeduct for chained transformations
         {
             m3 rhsT = m.transposed();
             return m3(vec<3>(X.dot(rhsT.X),
-                X.dot(rhsT.Y),
-                X.dot(rhsT.Z)),
-                vec<3>(Y.dot(rhsT.X),
-                       Y.dot(rhsT.Y),
-                       Y.dot(rhsT.Z)),
-                vec<3>(Z.dot(rhsT.X),
-                       Z.dot(rhsT.Y),
-                       Z.dot(rhsT.Z)));
+                             X.dot(rhsT.Y),
+                             X.dot(rhsT.Z)),
+                      vec<3>(Y.dot(rhsT.X),
+                             Y.dot(rhsT.Y),
+                             Y.dot(rhsT.Z)),
+                      vec<3>(Z.dot(rhsT.X),
+                             Z.dot(rhsT.Y),
+                             Z.dot(rhsT.Z)));
         }
     };
 
-    // Type constraint for rt-soft-render maths functions
+    // Type constraint for vox_sculpt maths functions
     template<typename numeric_t>
     concept maths_type = std::is_floating_point_v<numeric_t> ||
                          std::is_same_v<numeric_t, vec<2>> ||
@@ -270,15 +277,15 @@ export namespace vmath
     const bool anyEqual(vec<3> lhs, vec<3> rhs)
     {
         return lhs.e[0] == rhs.e[0] ||
-            lhs.e[1] == rhs.e[1] ||
-            lhs.e[2] == rhs.e[2];
+               lhs.e[1] == rhs.e[1] ||
+               lhs.e[2] == rhs.e[2];
     }
 
     const bool allGreater(vec<3> lhs, vec<3> rhs)
     {
         return lhs.e[0] > rhs.e[0] &&
-            lhs.e[1] > rhs.e[1] &&
-            lhs.e[2] > rhs.e[2];
+               lhs.e[1] > rhs.e[1] &&
+               lhs.e[2] > rhs.e[2];
     }
 
     const bool allLesser(vec<3> lhs, vec<3> rhs)
@@ -556,41 +563,30 @@ export namespace vmath
     float fabs(float a);
     m3 normalSpace(vec<3> n)
     {
-        // Each possible solution for the [x-basis] assumes some direction is zero and uses that
-        // to solve the plane equation exactly orthogonal to the normal direction
-        // I.e. given (n.x)x + (n.y)y + (n.z)z = 0 we can resolve the x-basis in three different ways
-        // depending on which axis we decide to zero:
-        // y = 0 >> (n.x)x + (n.z)z = 0 >> (n.x)x = 0 - (n.z)z >> n.x(x) = -n.z(z) >> (x = n.z, z = -n.x)
-        // x = 0 >> (n.y)y + (n.z)z = 0 >> (n.y)y = 0 - (n.z)z >> n.y(y) = -n.z(z) >> (y = n.z, z = -n.y)
-        // z = 0 >> (n.x)x + (n.y)y = 0 >> (n.x)x = 0 - (n.y)y >> n.x(x) = -n.y(y) >> (x = n.z, y = -n.x)
-        // This assumption becomes less reliable as the direction chosen by any of the solutions gets further
-        // and further away from zero; the most effective way to minimize that error is to use the solution
-        // corresponding to the smallest direction
-        // In other words...
-        // When x = min(x, y, z), solve for x = 0
-        // When y = min(x, y, z), solve for y = 0
-        // When z = min(x, y, z), solve for z = 0
-        vec<3> absNormal = vec<3>(fabs(n.x()), fabs(n.y()),fabs(n.z()));
-        float minAxis = static_cast<float>(fmin(fmin(absNormal.x(),
-                                                     absNormal.y()),
-                                                     absNormal.z()));
+        // Tangent normal function from:
+        // https://www.shadertoy.com/view/ltKyzm
+        // Originally from Scratchapixel
+        // https://www.scratchapixel.com/lessons/3d-basic-rendering/global-illumination-path-tracing/global-illumination-path-tracing-practical-implementation
 
-        // Scratchapixel's minimum-selection function
-        vec<3> basisX = vec<3>(0, 0, 0);
-        if (absNormal.x() > absNormal.y())
+        // Generate a basis-x direction
+        // Different functions will be more/less appropriate
+        // depending on the normal's x/y-tendency
+        vec<3> absNormal = vec<3>(fabs(n.x()), fabs(n.y()), fabs(n.z()));
+        vec<3> basisX = vec<3>(0,0,0);
+        if (absNormal.x() >= absNormal.y())
         {
-            basisX = vec<3>(n.z(), 0.0f, n.x() * -1.0f);
+            basisX = vmath::vec<3>(n.z(), 0.0f, n.x() * -1.0f);
         }
         else
         {
-            basisX = vec<3>(0.0f, n.z(), n.y() * -1.0f);
+            basisX = vmath::vec<3>(0.0f, n.z(), n.y() * -1.0f);
         }
 
         // Build the normal-space from the normal vector and the x-basis we generated before,
         // then return the result
-        return m3(basisX.normalized(),
-            n,
-            n.cross(basisX).normalized());
+        return m3(basisX,
+                  n,
+                  basisX.cross(n));
     }
 
     float ffloor(float f);
@@ -648,7 +644,7 @@ export namespace vmath
         }
         else if constexpr (!std::is_same<clamp_type, float>::value)
         {
-            return vmax(vmin(a, clampMin), clampMax);
+            return vmin(vmax(a, clampMin), clampMax);
         }
         platform::osAssertion(false);
         return a; // Failure case; assert false & return the value unclamped
@@ -680,6 +676,13 @@ export namespace vmath
         unsigned int u = *reinterpret_cast<unsigned int*>(&f);
         const bool bitset = u & (1 << 31);
         return bitset ? -1.0f : 1.0f;
+    }
+
+    vec<3> vsgn(vec<3> v)
+    {
+        return vec<3>(fsgn(v.x()),
+                      fsgn(v.y()),
+                      fsgn(v.z()));
     }
 
     bool eps_equality(float x, float y)
@@ -718,3 +721,7 @@ export namespace vmath
             }
     };
 }
+
+#ifdef MATH_DBG
+#pragma optimize("", on)
+#endif

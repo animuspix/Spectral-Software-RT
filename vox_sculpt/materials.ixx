@@ -77,6 +77,7 @@ export namespace materials
                                                                      // nDotL *and* div by pi feels super sketchy
                                                                      // ~Fairly sure this evaluates down to just the y-axis of the sampled ray, divided by pi;
                                                                      // kinda feel like testing to make sure before optimizing
+                                                                     // need to review pdf here against PBRT
     }
 
     // A concrete material instance, allowing specific objects to bind themselves to the sampling/shading functions specified above

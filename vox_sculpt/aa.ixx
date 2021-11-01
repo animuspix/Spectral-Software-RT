@@ -10,7 +10,7 @@ export namespace aa
 	float blackman_harris_weight(vmath::vec<2> sample_xy)
 	{
 		// Transform coordinates to absolute pixel distances
-		sample_xy = vmath::vabs(sample_xy);
+		sample_xy = vmath::vabs(sample_xy - vmath::vec<2>(samples_x, samples_y));
 
 		// Blackman-Harris alpha parameters
 		// Parameter values taken from:
@@ -28,15 +28,15 @@ export namespace aa
 									  (alph3 * vmath::cos(6.0f * ratio));
 		return (filtv.x() * filtv.y());
 	}
-	vmath::vec<2> jitter(float film_x, float film_y, float rand_u, float rand_v)
+	vmath::vec<2> supersample(float film_x, float film_y)
 	{
-		// Scale film coordinates up to sampling resolution
-		film_x *= aa::samples_x;
-		film_y *= aa::samples_y;
-
+		return vmath::vec<2>(film_x * samples_x, film_y * samples_y);
+	}
+	vmath::vec<2> jitter(float rand_u, float rand_v)
+	{
 		// Jitter inside the sampling grid
-		film_x += (rand_u * aa::samples_x) - (aa::samples_x * 0.5f);
-		film_y += (rand_v * aa::samples_x) - (aa::samples_x * 0.5f);
-		return vmath::vec<2>(film_x, film_y);
+		const float x_jitter = (rand_u * aa::samples_x) - (aa::samples_x * 0.5f);
+		const float y_jitter = (rand_v * aa::samples_y) - (aa::samples_y * 0.5f);
+		return vmath::vec<2>(x_jitter, y_jitter);
 	}
 }
