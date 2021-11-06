@@ -75,8 +75,12 @@ struct osThreadControls
 static u32 indices[9] = {};
 #endif
 volatile u32* batched_thrd_indices;
-static osThreadControls<platform::threads::thread_meta::tile_thrd_fn>* batched_thrd_controls = nullptr;
+osThreadControls<platform::threads::thread_meta::tile_thrd_fn>* batched_thrd_controls = nullptr;
 void placeholder_work_tiles(u16, u16, u16) {}
+#define DBG_THREAD_MAIN
+#ifdef DBG_THREAD_MAIN
+#pragma optimize ("", off)
+#endif
 DWORD thread_main_tiles()
 {
     // Safely update indices across threads
@@ -111,6 +115,9 @@ DWORD thread_main_tiles()
     }
     return 0;
 }
+#ifdef DBG_THREAD_MAIN
+#pragma optimize ("", on)
+#endif
 
 void placeholder_work_workers() {}
 DWORD thread_main_worker(void* ctrl)
@@ -222,6 +229,11 @@ void platform::threads::osInitWorker(platform::threads::osThread<platform::threa
     //controls._task_finish_state = worker->task_finish_state;
     //controls._type = platform::threads::thread_meta::TILE;
     //worker->handle = CreateThread(NULL, 0xffff, (LPTHREAD_START_ROUTINE)thread_main<platform::threads::thread_meta::tile_thrd_fn>, &controls, NULL, NULL);
+}
+
+u32 platform::threads::osResolveAvailableBatchProcessors()
+{
+    return std::thread::hardware_concurrency();
 }
 
 void platform::threads::osAssignAndWakeBatchProcessors(thread_meta::tile_thrd_fn fn,

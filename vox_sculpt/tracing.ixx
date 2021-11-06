@@ -16,12 +16,13 @@ namespace tracing
 {
     export path* cameraPaths; // One reusable path/tile for now, minx * miny expected for VCM
                               // (so we can process each one multiple times against arbitrary light paths)
-    //path lightPaths[parallel::numTiles];
+    //path* lightPaths;
     export float* isosurf_distances; // Distances to sculpture boundaries from grid bounds, per-subpixel, refreshed on camera zoom/rotate + animation timesteps (if/when I decide to implement those)
-    u32 sample_ctr[parallel::numTiles] = {};
-    export vmath::vec<2> tracing_tile_positions[parallel::numTiles] = {};
-    export vmath::vec<2> tracing_tile_bounds[parallel::numTiles] = {};
-    export vmath::vec<2> tracing_tile_sizes[parallel::numTiles] = {};
+    u32* sample_ctr = nullptr;
+    export vmath::vec<2>* tracing_tile_positions = nullptr;
+    export vmath::vec<2>* tracing_tile_bounds = nullptr;
+    export vmath::vec<2>* tracing_tile_sizes = nullptr;
+    export platform::threads::osAtomicInt* completed_tiles;
     platform::threads::osAtomicInt* draws_running;
 
     export void trace(u16 tilesX, u16 tilesY, u16 tileNdx)
@@ -129,6 +130,9 @@ namespace tracing
                     // Log to console once we finish sampling
                     platform::osDebugLogFmt("%iSPP rendering completed for tile %i\n", aa::max_samples, tileNdx);
                     tile_sampling_finished = true;
+
+                    // Signal the current tile has finished sampling
+                    completed_tiles->inc();
                 }
                 // Signal a completed sampling iteration
                 parallel::tiles[tileNdx].messaging->inc();
@@ -141,9 +145,16 @@ namespace tracing
     }
     export void init()
     {
+        // Allocate tracing arrays
         cameraPaths = mem::allocate_tracing<path>(sizeof(path) * parallel::numTiles);
+        sample_ctr = mem::allocate_tracing<u32>(sizeof(u32) * parallel::numTiles);
+        tracing_tile_positions = mem::allocate_tracing<vmath::vec<2>>(sizeof(vmath::vec<2>) * parallel::numTiles);
+        tracing_tile_bounds = mem::allocate_tracing<vmath::vec<2>>(sizeof(vmath::vec<2>) * parallel::numTiles);
+        tracing_tile_sizes = mem::allocate_tracing<vmath::vec<2>>(sizeof(vmath::vec<2>) * parallel::numTiles);
+        isosurf_distances = (float*)mem::allocate_tracing<float>(sizeof(float) * ui::window_area); // Eventually this will be per-subpixel instead of per-macropixel
+
+        // Resolve tracing types
         platform::osClearMem(cameraPaths, sizeof(path) * parallel::numTiles);
-        isosurf_distances = (float*)mem::allocate_tracing<float>(sizeof(float) * ui::window_area); // Eventually this will be per-subpixel instead of per-macropixel, but I'm not quite up to adding AA yet
         for (u32 i = 0; i < ui::window_area; i++)
         {
             isosurf_distances[i] = -1.0f; // Reserve zero distance for voxels directly facing a grid boundary
@@ -153,5 +164,9 @@ namespace tracing
         draws_running = mem::allocate_tracing<platform::threads::osAtomicInt>(sizeof(platform::threads::osAtomicInt));
         draws_running->init();
         draws_running->inc();
+
+        // Allocate & initialize work completion state
+        completed_tiles = mem::allocate_tracing<platform::threads::osAtomicInt>(sizeof(platform::threads::osAtomicInt));
+        completed_tiles->init();
     }
 };

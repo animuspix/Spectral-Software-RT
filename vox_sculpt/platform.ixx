@@ -136,6 +136,11 @@ export namespace platform
                 work_params next_task_params; // Cached parameters for each task invocation
         };
 
+        // Find tile count for the current cpu (at runtime)
+        // We assume that we flood the cpu with tile work, and any independant worker threads are timesliced in (since they'll most likely be i/o tasks that we
+        // don't super mind running behind slightly)
+        u32 osResolveAvailableBatchProcessors();
+
         // Update arguments for batched threads, then wake them
         void osAssignAndWakeBatchProcessors(thread_meta::tile_thrd_fn fn,
                                             osThread<thread_meta::TILE>* workgroup, u8 workgroup_width, u8 workgroup_height, u16 workgroup_area);

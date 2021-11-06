@@ -10,6 +10,7 @@ import mem;
 import tracing;
 import parallel;
 import geometry;
+import platform;
 import vox_ints;
 
 #define MAX_LOADSTRING 100
@@ -53,6 +54,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // Load window/desktop renderer
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_VOXSCULPT));
 
+//#define TIMED_TRACING
+#ifdef TIMED_TRACING
+    double rt_t = platform::osGetCurrentTimeSeconds();
+#endif
+
     // Main message loop:
     u64 frameCtr = 0;
     MSG msg;
@@ -77,6 +83,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                 parallel::tiles[i].messaging->store(0);
             }
         }
+
+        // Break & output render performance when timed ray-tracing is active
+#ifdef TIMED_TRACING
+        if (tracing::completed_tiles->load() == parallel::numTiles)
+        {
+            platform::osDebugLogFmt("tracing completed within %f seconds \n", platform::osGetCurrentTimeSeconds() - rt_t);
+            platform::osDebugBreak();
+        }
+#endif
 
         // Present new colors on window wake/message
         if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))

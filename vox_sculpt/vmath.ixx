@@ -667,8 +667,16 @@ export namespace vmath
     vec<3> vmodf(vec<3> u, vec<3> v)
     {
         return vec<3>(fmodf(u.e[0], v.e[0]),
-                      fmodf(u.e[0], v.e[0]),
-                      fmodf(u.e[0], v.e[0]));
+                      fmodf(u.e[1], v.e[1]),
+                      fmodf(u.e[2], v.e[2]));
+    }
+
+    float fsqrt(float fval);
+    vec<3> vsqrt(vec<3> u, vec<3> v)
+    {
+        return vec<3>(fsqrt(u.e[0]),
+                      fsqrt(u.e[1]),
+                      fsqrt(u.e[2]));
     }
 
     float fsgn(float f)

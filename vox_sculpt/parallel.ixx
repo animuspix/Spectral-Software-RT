@@ -4,27 +4,76 @@ import ui;
 import platform;
 import sampler;
 import mem;
+import vmath;
 import vox_ints;
 import <stdio.h>;
 
+//#define PARALLEL_DBG
+#ifdef PARALLEL_DBG
+#pragma optimize("", off)
+#endif
+
 export namespace parallel
 {
-    constexpr u16 numTilesX = 3;
-    constexpr u16 numTilesY = 3;
-    constexpr u16 numTiles = numTilesX * numTilesY;
-    platform::threads::osThread<platform::threads::thread_meta::TILE> tiles[numTiles];
-    sampler::philox rand_streams[numTiles]; // One PRNG stream/tile
-    char* logs[numTiles]; // Debug messages, printable after tasks have finished and threads are idle
-    u32 log_lengths[numTiles] = {}; // Amount of valid text per-log; reset after printing
+    u16 numTilesX = 0;
+    u16 numTilesY = 0;
+    u16 numTiles = 0;
+    platform::threads::osThread<platform::threads::thread_meta::TILE>* tiles = nullptr;
+    sampler::philox* rand_streams = nullptr; // One PRNG stream/tile
+    char** logs = nullptr; // Debug messages, printable after tasks have finished and threads are idle
+    u32* log_lengths = nullptr; // Amount of valid text per-log; reset after printing
     void init()
     {
-        // Initialize random-number-generators, thread-state fences, and worker threads
-        // Each tile gets up to 4MB of debug output
-        for (u8 i = 0; i < (u8)parallel::numTiles; i++)
+        // Find maximum tile count for the current platform
+        numTiles = platform::threads::osResolveAvailableBatchProcessors();
+        const float root = vmath::fsqrt(numTiles);
+        if (root - int(root) > 0)
         {
-            rand_streams[i].init(i);
+            // X is the root of the previous perfect square
+            numTilesX = static_cast<u16>(vmath::ffloor(root));
+
+            // We want our threads to tile as evenly as possible;
+            // approximate tiles_y by dividing out the total number
+            // of tiles by the number we assigned for X
+            // We could go further, but this works in most cases and
+            // leaves threads around for doing other things on the
+            // user's pc when it doesn't; that feels better than a
+            // solution that works in "all" cases but generates more
+            // threads than the hardware can run independantly,
+            // causing some to timeslice
+            numTilesY = numTiles / numTilesX;
+        }
+        else
+        {
+            numTilesX = static_cast<u16>(root);
+            numTilesY = static_cast<u16>(root);
+        }
+
+        // Allocat thread tiles
+        tiles = mem::allocate_tracing<platform::threads::osThread<platform::threads::thread_meta::TILE>>(sizeof(platform::threads::osThread<platform::threads::thread_meta::TILE>) * numTiles);
+        platform::osClearMem(tiles, sizeof(platform::threads::osThread<platform::threads::thread_meta::TILE>) * numTiles);
+
+        // Allocate PRNG streams
+        rand_streams = mem::allocate_tracing<sampler::philox>(sizeof(sampler::philox) * numTiles);
+
+        // Allocate log destinations
+        // (can probably optimize to subdivide one huge char* instead of lots of cache-unfriendly pointers)
+        logs = mem::allocate_tracing<char*>(numTiles);
+        for (u16 i = 0; i < numTiles; i++)
+        {
             logs[i] = mem::allocate_tracing<char>(4 * 1024 * 1024);
             platform::osClearMem(logs[i], 4 * 1024 * 1024);
+        }
+
+        // Allocate log-length tags
+        // Each tag gives a length of valid/printable text for each log
+        log_lengths = mem::allocate_tracing<u32>(numTiles * sizeof(u32));
+
+        // Initialize random-number-generators, thread-state fences, and worker threads
+        // Each tile gets up to 4MB of debug output
+        for (u8 i = 0; i < (u8)numTiles; i++)
+        {
+            rand_streams[i].init(i);
         }
         platform::threads::osInitBatchProcessors(tiles, numTiles);
     }
@@ -33,7 +82,7 @@ export namespace parallel
     void launch(void(*work)(u16 num_tiles_x, u16 num_tiles_y, u16 tile_ndx))
     {
         // Draw workers are constantly integrating the scene
-        platform::threads::osAssignAndWakeBatchProcessors(work, tiles, numTilesX, numTilesY, numTiles);
+        platform::threads::osAssignAndWakeBatchProcessors(work, tiles, static_cast<u8>(numTilesX), static_cast<u8>(numTilesY), numTiles);
     }
     char* get_log_dst(u8 tile_ndx)
     {
@@ -56,3 +105,7 @@ export namespace parallel
         platform::threads::osTerminateBatchProcessors(tiles, numTiles);
     }
 };
+
+#ifdef PARALLEL_DBG
+#pragma optimize("", on)
+#endif

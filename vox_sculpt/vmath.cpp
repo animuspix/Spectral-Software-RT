@@ -42,3 +42,8 @@ float vmath::fmodf(float fval, float finterval)
 	return std::fmodf(fval, finterval);
 }
 
+float vmath::fsqrt(float fval)
+{
+	return std::sqrt(fval);
+}
+
