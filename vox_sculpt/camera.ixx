@@ -40,6 +40,7 @@ export namespace camera
 
     // Camera sampling! just perspective projection for now :)
     const vmath::vec<3> camera_pos() { return vmath::vec<3>(0, 0, -10.0f); }
+    const float camera_z_axis() { return (ui::window_width * aa::samples_x) / vmath::ftan(FOV_RADS * 0.5f); }
     constexpr float FOV_RADS = vmath::pi * 0.5f;
     export tracing::path_vt lens_sample(float film_x, float film_y, float rand_u, float rand_v, float rho)
     {
@@ -59,8 +60,32 @@ export namespace camera
         const vmath::vec<3> c = camera_pos();
         return tracing::path_vt(vmath::vec<3>(film_xy.x() - ui::image_centre_x * aa::samples_x,
                                               film_xy.y() - ui::image_centre_y * aa::samples_y,
-                                              (ui::window_width * aa::samples_x) / vmath::ftan(FOV_RADS * 0.5f)).normalized(), // Probably don't need to normalize here, but the stability feels nice
+                                              camera_z_axis()).normalized(), // Probably don't need to normalize here, but the stability feels nice
                                               c, 1.0f / filt, rho, 1.0f);
+    }
+
+    // Find the perspective-projected pixel coordinate passing through the given worldspace 3D coordinate
+    export vmath::vec<2> inverse_lens_sample(vmath::vec<3> world_pos)
+    {
+        // Outgoing perspective-projection reference
+        // vmath::vec<3>(film_xy.x() - ui::image_centre_x * aa::samples_x,
+        //               film_xy.y() - ui::image_centre_y * aa::samples_y,
+        //               camera_z_axis()).normalized();
+
+        // Resolve direction to the given worldspace position
+        // (assumes a pinhole camera)
+        const vmath::vec<3> c = camera_pos();
+        const vmath::vec<3> world_dir = (c - world_pos).normalized();
+
+        // Reconstruct position where z matches the z-axis of my camera rays before normalization
+        const float dx = world_dir.x() / world_dir.z();
+        const float dy = world_dir.y() / world_dir.z();
+        const float z = camera_z_axis(); // (ui::window_width * aa::samples_x) / vmath::ftan(FOV_RADS * 0.5f)
+        world_pos = c + vmath::vec<3>(dx * z, dy * z, z);
+
+        // Just mask off x and y? Not sure if that's enough to get valid pixel positions
+        return vmath::vec<2>((world_pos.x() / aa::samples_x) + ui::image_centre_x,
+                             (world_pos.y() / aa::samples_y) + ui::image_centre_y);
     }
 
     // Combination of a custom sensor response curve (see spectra.h) and a basic integration scheme

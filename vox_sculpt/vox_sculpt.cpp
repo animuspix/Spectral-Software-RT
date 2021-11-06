@@ -56,6 +56,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 //#define TIMED_TRACING
 #ifdef TIMED_TRACING
+    bool tracing_prepass_completed = false;
     double rt_t = platform::osGetCurrentTimeSeconds();
 #endif
 
@@ -88,7 +89,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 #ifdef TIMED_TRACING
         if (tracing::completed_tiles->load() == parallel::numTiles)
         {
-            platform::osDebugLogFmt("tracing completed within %f seconds \n", platform::osGetCurrentTimeSeconds() - rt_t);
+            platform::osDebugLogFmt("volume tracing completed within %f seconds \n", platform::osGetCurrentTimeSeconds() - rt_t);
+            platform::osDebugBreak();
+        }
+        if ((tracing::prepass_tile_completion->load() == parallel::numTiles) && !tracing_prepass_completed)
+        {
+            double t = platform::osGetCurrentTimeSeconds();
+            platform::osDebugLogFmt("prepass/sky tracing completed within %f seconds \n", t - rt_t);
+            rt_t = t; // Update timestamp before profiling volume tracing
+            tracing_prepass_completed = true;
             platform::osDebugBreak();
         }
 #endif
