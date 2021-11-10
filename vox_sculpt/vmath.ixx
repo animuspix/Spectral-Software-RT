@@ -127,6 +127,21 @@ export namespace vmath
         {
             return vec<2>(e[0], e[1]);
         }
+        const vec<2> xz() const
+        {
+            static_assert(dim >= 3, "no z-coordinate available");
+            return vec<2>(e[0], e[2]);
+        }
+        const vec<2> zw() const
+        {
+            static_assert(dim == 4, "no w-coordinate available");
+            return vec<2>(e[2], e[3]);
+        }
+        const vec<2> yw() const
+        {
+            static_assert(dim == 4, "no w-coordinate available");
+            return vec<2>(e[1], e[3]);
+        }
         const vec<3> xyz() const
         {
             static_assert(dim >= 3, "Not enough components for XYZ swizzle");

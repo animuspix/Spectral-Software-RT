@@ -39,9 +39,9 @@ export namespace camera
     constexpr u32 digital_colors_footprint = ui::window_width * ui::window_height * sizeof(u32);
 
     // Camera sampling! just perspective projection for now :)
+    constexpr float FOV_RADS = vmath::pi * 0.5f;
     const vmath::vec<3> camera_pos() { return vmath::vec<3>(0, 0, -10.0f); }
     const float camera_z_axis() { return (ui::window_width * aa::samples_x) / vmath::ftan(FOV_RADS * 0.5f); }
-    constexpr float FOV_RADS = vmath::pi * 0.5f;
     export tracing::path_vt lens_sample(float film_x, float film_y, float rand_u, float rand_v, float rho)
     {
         // Compute supersampled coordinates
@@ -75,7 +75,8 @@ export namespace camera
         // Resolve direction to the given worldspace position
         // (assumes a pinhole camera)
         const vmath::vec<3> c = camera_pos();
-        const vmath::vec<3> world_dir = (c - world_pos).normalized();
+        vmath::vec<3> c_rel = c - world_pos;
+        const vmath::vec<3> world_dir = c_rel.normalized();
 
         // Reconstruct position where z matches the z-axis of my camera rays before normalization
         const float dx = world_dir.x() / world_dir.z();

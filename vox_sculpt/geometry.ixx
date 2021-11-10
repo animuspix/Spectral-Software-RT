@@ -10,6 +10,11 @@ import parallel;
 import spectra;
 import vox_ints;
 
+//#define GEOMETRY_DBG
+#ifdef GEOMETRY_DBG
+#pragma optimize("", off)
+#endif
+
 namespace geometry
 {
     export struct vol
@@ -32,6 +37,10 @@ namespace geometry
             vmath::vec<3> scale; // Bounding-box scale on x/y/z
             vmath::vec<3> pos; // World-space position
             vmath::vec<4> orientation; // World-space orientation, specified as a quaternion
+            vmath::vec<2> ss_v0; // Top-left of the screen-space quad projected from the volume's bounding-box, updated on camera transform
+            vmath::vec<2> ss_v1; // Top-right of the screen-space bounding quad
+            vmath::vec<2> ss_v2; // Bottom-left of the screen-space bounding quad
+            vmath::vec<2> ss_v3; // Bottom-right of the screen-space bounding quad
         };
 
         // Volume metadata (material, transform information)
@@ -141,6 +150,57 @@ namespace geometry
                 return CELL_STATUS::EMPTY;
             }
         }
+
+        // Resolve screen-space volume bounds for the current camera transform
+        // (inverse lens sampling performed on the camera, so this just needs to resolve worldspace bounds and reproject them that way, before
+        // taking the min/max coordinates in the 2D plane and storing those)
+        void resolveSSBounds(vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
+        {
+            // Resolve worldspace extents for our volume AABB
+            // Will eventually need to adjust this code for different camera angles, zoom, panning, etc.
+            const vmath::vec<3> vol_p = metadata.transf.pos;
+            const vmath::vec<3> vol_extents = metadata.transf.scale * 0.5f;
+
+            // Volume AABB vertices, from left->right, top->bottom, and front->back
+            ///////////////////////////////////////////////////////////////////////
+
+            // Front
+            const vmath::vec<3> aabb0 = vol_p + vmath::vec<3>(-vol_extents.x(), vol_extents.y(), -vol_extents.z());
+            const vmath::vec<3> aabb1 = vol_p + vmath::vec<3>(vol_extents.x(), vol_extents.y(), -vol_extents.z());
+            const vmath::vec<3> aabb2 = vol_p + vmath::vec<3>(-vol_extents.x(), -vol_extents.y(), -vol_extents.z());
+            const vmath::vec<3> aabb3 = vol_p + vmath::vec<3>(vol_extents.x(), -vol_extents.y(), -vol_extents.z());
+
+            // Back
+            const vmath::vec<3> aabb4 = vol_p + vmath::vec<3>(-vol_extents.x(), vol_extents.y(), vol_extents.z());
+            const vmath::vec<3> aabb5 = vol_p + vmath::vec<3>(vol_extents.x(), vol_extents.y(), vol_extents.z());
+            const vmath::vec<3> aabb6 = vol_p + vmath::vec<3>(-vol_extents.x(), -vol_extents.y(), vol_extents.z());
+            const vmath::vec<3> aabb7 = vol_p + vmath::vec<3>(vol_extents.x(), -vol_extents.y(), vol_extents.z());
+
+            // Project AABB vertices into screenspace
+            const vmath::vec<2> aabb_vertices_ss[8] = { inverse_lens_sampler_fn(aabb0),
+                                                        inverse_lens_sampler_fn(aabb1),
+                                                        inverse_lens_sampler_fn(aabb2),
+                                                        inverse_lens_sampler_fn(aabb3),
+                                                        inverse_lens_sampler_fn(aabb4),
+                                                        inverse_lens_sampler_fn(aabb5),
+                                                        inverse_lens_sampler_fn(aabb6),
+                                                        inverse_lens_sampler_fn(aabb7) };
+
+            // Resolve screen-space quad from min/max vertices
+            vmath::vec<4> min_max_px = vmath::vec<4>(9999.9f, 9999.9f, -9999.9f, -9999.9f); // Order is minX, minY, maxX, maxY
+            for (u8 i = 0; i < 8; i++)
+            {
+                float vx = aabb_vertices_ss[i].e[0], vy = aabb_vertices_ss[i].e[1];
+                min_max_px.e[0] = vmath::fmin(min_max_px.e[0], vx);
+                min_max_px.e[1] = vmath::fmin(min_max_px.e[1], vy);
+                min_max_px.e[2] = vmath::fmax(min_max_px.e[2], vx);
+                min_max_px.e[3] = vmath::fmax(min_max_px.e[3], vy);
+            }
+            metadata.transf.ss_v0 = min_max_px.xy(); // Min, min
+            metadata.transf.ss_v1 = vmath::vec<2>(min_max_px.x(), min_max_px.w()); // Min, max
+            metadata.transf.ss_v2 = vmath::vec<2>(min_max_px.z(), min_max_px.y()); // Max, min
+            metadata.transf.ss_v3 = min_max_px.zw(); // Max, max
+        }
     };
 
     // Core volume info :D
@@ -217,7 +277,7 @@ namespace geometry
         };
     }
 
-    export void init()
+    export void init(vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
     {
         // Allocate volume memory
         volume = mem::allocate_tracing<vol>(vol::footprint); // Generalized volume info
@@ -249,9 +309,11 @@ namespace geometry
         /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
         // Update transform metadata; eventually this should be loaded from disk
+        // (position should probably be actually zeroed, there's no reason for users to modify it instead of moving the camera)
         volume->metadata.transf.pos = vmath::vec<3>(0.0f, 0.0f, 20.0f);
         volume->metadata.transf.orientation = vmath::vec<4>(0.0f, 0.0f, 0.0f, 1.0f);
         volume->metadata.transf.scale = vmath::vec<3>(4, 4, 4); // Boring regular unit scale
+        volume->resolveSSBounds(inverse_lens_sampler_fn);
 
         // Update material metadata; eventually this should be loaded from disk
         materials::instance& boxMat = volume->metadata.mat;
@@ -321,7 +383,7 @@ namespace geometry
     // Test for intersections with individual cells within the grid, using DDA
     // (single-cell steps within the volume grid, along a given direction)
     // Implemented following the guide in this tutorial
-    // https://www.youtube.com/watch?v=W5P8GlaEOSI
+    // https://www.y()outube.com/watch?v=W5P8GlaEOSI
     // + this paper/blog
     // https://castingrays.blogspot.com/2014/01/voxel-rendering-using-discrete-ray.html
     // many thanks to the creators of both <3
@@ -455,3 +517,7 @@ namespace geometry
         }
     }
 };
+
+#ifdef GEOMETRY_DBG
+#pragma optimize("", on)
+#endif

@@ -43,7 +43,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     parallel::init();
     tracing::init(); // Leave a gap between parallel initialization and the first system that needs access to our thread tiles,
                      // so we avoid trying to launch work before threads are ready
-    geometry::init();
+    geometry::init(camera::inverse_lens_sample);
 
     // Create the application window
     if (!ui::window_setup((void*)hInstance, nCmdShow, (void*)WndProc, szWindowClass, szTitle)) return FALSE;
@@ -92,13 +92,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             platform::osDebugLogFmt("volume tracing completed within %f seconds \n", platform::osGetCurrentTimeSeconds() - rt_t);
             platform::osDebugBreak();
         }
-        if ((tracing::prepass_tile_completion->load() == parallel::numTiles) && !tracing_prepass_completed)
+        if ((tracing::tile_prepass_completion->load() == parallel::numTiles) && !tracing_prepass_completed)
         {
             double t = platform::osGetCurrentTimeSeconds();
             platform::osDebugLogFmt("prepass/sky tracing completed within %f seconds \n", t - rt_t);
             rt_t = t; // Update timestamp before profiling volume tracing
             tracing_prepass_completed = true;
-            platform::osDebugBreak();
+            //platform::osDebugBreak();
         }
 #endif
 
