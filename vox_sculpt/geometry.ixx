@@ -73,13 +73,13 @@ namespace geometry
         static u32 index_solver(vmath::vec<3> uvw_floored, u64* out_bit_ndx_mask) // Returns chunk index directly, bitmask to select the cell within the chunk in [out_bit_ndx_mask]
         {
             u8 bit_ndx = static_cast<u8>((floor(fmodf(uvw_floored.z(), 4.0f)) * 4) + // Z-axis, snapped into chunk space
-                (floor(fmodf(uvw_floored.y(), 4.0f)) * 16) + // Y-axis, snapped into chunk space
-                floor(fmodf(uvw_floored.x(), 4.0f))); // X-axis, snapped into chunk space
+                                         (floor(fmodf(uvw_floored.y(), 4.0f)) * 16) + // Y-axis, snapped into chunk space
+                                         floor(fmodf(uvw_floored.x(), 4.0f))); // X-axis, snapped into chunk space
             *out_bit_ndx_mask = 1ull << bit_ndx;
             uvw_floored = vmath::vfloor(uvw_floored / 4.0f);
             return static_cast<u32>(uvw_floored.x() + // Local scanline offset
-                (uvw_floored.y() * num_chunks_x) + // Local slice offset
-                (uvw_floored.z() * num_chunks_xy)); // Volume offset;
+                                   (uvw_floored.y() * num_chunks_x) + // Local slice offset
+                                   (uvw_floored.z() * num_chunks_xy)); // Volume offset;
         }
         static vmath::vec<3> uvw_solver(u32 cell_ndx) // Designed for mapping [0...res] loop iterations into positions to simplify vmaths operations; not designed to work with bitfields
                                                       // and chunk indices as input
@@ -449,10 +449,10 @@ namespace geometry
                            /* d_pos.x() < d_pos.y() || d_pos.x() <= d_pos.z() */ 2 /* : 0*/;
 
                 // We want to weight each continuous step by its axis' contribution to the slope of the ray direction
-                t.e[min_axis] += g.e[min_axis];
+                t.e[min_axis] += g.e[min_axis]; // Optional scale here for chunk traversal
 
                 // Update our current voxel coordinate
-                uvw_floored.e[min_axis] += d_uvw.e[min_axis];
+                uvw_floored.e[min_axis] += d_uvw.e[min_axis]; // Optional scale here for chunk traversal
 
                 // Ray escaped the volume :o
                 if (vmath::anyGreater(uvw_floored, vol::width - 1) || vmath::anyLesser(uvw_floored, 0))
