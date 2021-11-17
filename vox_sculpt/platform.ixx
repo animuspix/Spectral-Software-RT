@@ -188,4 +188,5 @@ export namespace platform
     void* osMalloc(u64 size, u64 alignment);
     void osFree(void*);
     void osClearMem(void* address, u32 length);
+    void osSetMem(void* address, u8 byte_pattern, u32 length);
 };

@@ -407,3 +407,8 @@ void platform::osClearMem(void* address, u32 length)
 {
     ZeroMemory(address, length);
 }
+
+void platform::osSetMem(void* address, u8 byte_pattern, u32 length)
+{
+    memset(address, byte_pattern, length);
+}
