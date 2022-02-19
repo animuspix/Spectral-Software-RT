@@ -162,6 +162,9 @@ export namespace platform
 
         // Waits for the specified atomic to reach a certain value
         void osWaitForSignal(osAtomicInt* messenger, u32 expected_value);
+
+        // Get the ID associated with the calling thread on the current platform
+        u32 osGetThreadId();
     };
     bool osWindowSetup(void* hInstance, int nCmdShow, void* wndProcSig, wchar_t* wndClassName, wchar_t* wndTitle, u16 w, u16 h);
     void* osGetWindowBmi();
@@ -189,4 +192,5 @@ export namespace platform
     void osFree(void*);
     void osClearMem(void* address, u32 length);
     void osSetMem(void* address, u8 byte_pattern, u32 length);
+    void osCpyMem(void* dst, void* src, u64 size);
 };

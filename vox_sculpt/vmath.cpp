@@ -32,6 +32,11 @@ float vmath::ffloor(float f)
 	return std::floor(f);
 }
 
+float vmath::ffrac(float f)
+{
+	return f - int(f);
+}
+
 float vmath::fceil(float f)
 {
 	return std::ceil(f);

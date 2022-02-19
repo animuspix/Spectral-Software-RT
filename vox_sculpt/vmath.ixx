@@ -612,6 +612,14 @@ export namespace vmath
                       ffloor(v.e[2]));
     }
 
+    float ffrac(float f);
+    vec<3> vfrac(vec<3> v)
+    {
+        return vec<3>(ffrac(v.e[0]),
+                      ffrac(v.e[1]),
+                      ffrac(v.e[2]));
+    }
+
     float fceil(float f);
     vec<3> vceil(vec<3> v)
     {

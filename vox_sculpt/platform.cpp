@@ -260,6 +260,11 @@ void platform::threads::osWaitForSignal(platform::threads::osAtomicInt* messenge
     { /* Busy wait */ }
 }
 
+u32 platform::threads::osGetThreadId()
+{
+    return GetCurrentThreadId();
+}
+
 void platform::threads::osThreadGeneric::osWaitForExecution()
 {
     WaitForSingleObject(handle, INFINITE);
@@ -411,4 +416,9 @@ void platform::osClearMem(void* address, u32 length)
 void platform::osSetMem(void* address, u8 byte_pattern, u32 length)
 {
     memset(address, byte_pattern, length);
+}
+
+void platform::osCpyMem(void* dst, void* src, u64 size)
+{
+    memcpy(dst, src, size);
 }

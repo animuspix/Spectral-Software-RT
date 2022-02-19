@@ -81,14 +81,14 @@ namespace tracing
                             volume_tracing = true;
 
                             // Compute quad width, height
-                            const u16 qWidth = static_cast<u16>(vmath::fabs(geometry::vol::metadata.transf.ss_v3.x() - geometry::vol::metadata.transf.ss_v0.x()));
-                            const u16 qHeight = static_cast<u16>(vmath::fabs(geometry::vol::metadata.transf.ss_v3.y() - geometry::vol::metadata.transf.ss_v0.y()));
+                            const u16 qWidth = static_cast<u16>(vmath::fabs(geometry::vol::metadata->transf.ss_v3.x() - geometry::vol::metadata->transf.ss_v0.x()));
+                            const u16 qHeight = static_cast<u16>(vmath::fabs(geometry::vol::metadata->transf.ss_v3.y() - geometry::vol::metadata->transf.ss_v0.y()));
 
                             // Update local tile offsets (x/y bounds, width, height)
                             tile_width = (qWidth / tilesX);
                             tile_height = (qHeight / tilesY);
-                            minX = static_cast<u16>(geometry::vol::metadata.transf.ss_v0.x() + ((tileNdx % tilesX) * tile_width));
-                            minY = static_cast<u16>(geometry::vol::metadata.transf.ss_v0.y() + ((tileNdx / tilesX) * tile_height));
+                            minX = static_cast<u16>(geometry::vol::metadata->transf.ss_v0.x() + ((tileNdx % tilesX) * tile_width));
+                            minY = static_cast<u16>(geometry::vol::metadata->transf.ss_v0.y() + ((tileNdx / tilesX) * tile_height));
                             xMax = minX + tile_width;
                             yMax = minY + tile_height;
 
