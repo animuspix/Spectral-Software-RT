@@ -128,9 +128,9 @@ namespace geometry
                                                      uvw_floored.y() / metachunk::num_vox_y,
                                                      uvw_floored.z() / metachunk::num_vox_z);
             uvw_metachunk_space = vmath::vfloor(uvw_metachunk_space);
-            return static_cast<u32>(uvw_floored.x() + // Local scanline offset
-                                   (uvw_floored.y() * num_metachunks_x) + // Local slice offset
-                                   (uvw_floored.z() * num_metachunks_xy)); // Volume offset;
+            return static_cast<u32>(uvw_metachunk_space.x() + // Local scanline offset
+                                   (uvw_metachunk_space.y() * num_metachunks_x) + // Local slice offset
+                                   (uvw_metachunk_space.z() * num_metachunks_xy)); // Volume offset;
         }
         struct voxel_ndces
         {
@@ -157,12 +157,23 @@ namespace geometry
             // Return
             return ret;
         }
-        static vmath::vec<3> uvw_from_index(u32 ndx) // Index is a voxel-index within 0...(1024^3-1)
+
+        // Generic 3D index solver, assuming euclidean grid space and taking an index, width metric, and area metric
+        template<u32 w, u32 a>
+        static vmath::vec<3> expand_ndx(u32 ndx)
         {
-            const float z = static_cast<float>(ndx) / (num_metachunks_xy * metachunk::num_vox_xy);
-            const float y = (vmath::ffrac(z) * (num_metachunks_xy * metachunk::num_vox_xy)) / (num_metachunks_y * metachunk::num_vox_y);
-            const float x = vmath::ffrac(y) * (num_metachunks_x * metachunk::num_vox_x);
-            return vmath::vec<3>(x, y, z);
+            return vmath::vec<3>(static_cast<float>(ndx % w),
+                                 static_cast<float>((ndx % a) / w),
+                                 static_cast<float>(ndx / a));
+        }
+
+        // Generic 3D space flattener, implemented as the inverse of [expand_ndx(...)]
+        template<u32 w, u32 a>
+        static u32 flatten_ndx(vmath::vec<3> uvw)
+        {
+            return uvw.x() +
+                   (uvw.y() * w) +
+                   (uvw.z() * a);
         }
 
         // Helper enum & functions to quickly parse chunk/cell data for intersection tests + cell updates
@@ -249,46 +260,52 @@ namespace geometry
         const u32 num_tiles = static_cast<u32>(num_tiles_x) * num_tiles_y;
         const u32 slice_width = vol::num_metachunks_z / num_tiles; // Width for most slices except the last one, good enough for offset maths
         const u32 init_z = static_cast<u32>(tile_ndx) * slice_width;
-        const u32 max_z = vol::num_metachunks_z - init_z;
-        constexpr float r2 = 512.0f * 512.0f;
-        const vmath::vec<3> circOrigin(512, 512, 512);
+        const u32 max_z = vmath::umin(init_z + slice_width, vol::num_metachunks_z - init_z);
+
+        // Scale sphere into metachunk space
+        constexpr float metachunk_ori = (vol::width / vol::metachunk::num_vox_x) / 2;
+        constexpr float r = metachunk_ori;
+        constexpr float r2 = r * r;
+        const vmath::vec<3> circOrigin(metachunk_ori,
+                                       metachunk_ori,
+                                       metachunk_ori);
+
+        // Scale z-slices into metachunk space
         u32 metachunk_ctr = init_z * vol::num_metachunks_xy;
-        u32 metachunk_ndx_min = vol::metachunk_index_solver(vmath::vec<3>(0, 0, static_cast<float>(init_z)));
-        u32 metachunk_ndx_max = vol::metachunk_index_solver(vmath::vec<3>(vol::num_metachunks_x - 1,
-                                                                          vol::num_metachunks_y - 1,
-                                                                          static_cast<float>(max_z)));
-        u32 metachunk_ndx_ori = vol::metachunk_index_solver(circOrigin);
+        u32 metachunk_ndx_min = vol::flatten_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(vmath::vec<3>(0, 0, init_z));
+        u32 metachunk_ndx_max = vol::flatten_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(vmath::vec<3>(vol::num_metachunks_x - 1,
+                                                                                                              vol::num_metachunks_y - 1,
+                                                                                                              max_z));
+
+        // Set-up slices
 //#define TEST_NOISE_CUBE
-#define TEST_SPHERE
+//#define TEST_SPHERE
 //#define TEST_CUBE
 #if !defined(TEST_CUBE) && !defined(TEST_SPHERE)
         float sample[4];
 #endif
-        for (u32 i = metachunk_ndx_min; i < metachunk_ndx_max; i += 1)
+        for (u32 i = metachunk_ndx_min; i < metachunk_ndx_max; i++)
         {
 #ifndef TEST_NOISE_CUBE
 #ifndef TEST_CUBE
-            vmath::vec<3> uvw = vol::uvw_from_index(i);
-            if ((uvw - circOrigin).sqr_magnitude() < r2)
+            const vmath::vec<3> uvw = vol::expand_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(i);
+            const float d = (uvw - circOrigin).sqr_magnitude() - r2; // Sphere SDF
+            u8 v = 0;
+            if (d < 0.0f)
             {
-#ifndef TEST_SPHERE
-                for (u32 j = 0; j < vol::metachunk::res; j += 2)
-                {
-                    parallel::rand_streams[tile_ndx].next(sample);
-                    platform::osCpyMem(vol::metachunks[i].chunks + j, sample, sizeof(float) * 4); // Four floats is the same footprint as two u64s
-                }
+                parallel::rand_streams[tile_ndx].next(sample);
+#ifdef TEST_SPHERE
+                v = 255;
 #else
-                vol::metachunks[i].batch_assign(255);
+                v = 128 + (128 * sample[0]);
 #endif
             }
-            else
-            {
-                vol::metachunks[i].batch_assign(0);
-            }
+            vol::metachunks[i].batch_assign(v);
 #else
             vol::metachunks[i].batch_assign(255);
 #endif
 #else
+            parallel::rand_streams[tile_ndx].next(sample);
             platform::osCpyMem(vol::metachunks[i].chunks, sample, sizeof(float) * 4);
             platform::osCpyMem(vol::metachunks[i].chunks + 2, sample, sizeof(float) * 4);
             platform::osCpyMem(vol::metachunks[i].chunks + 4, sample, sizeof(float) * 4);

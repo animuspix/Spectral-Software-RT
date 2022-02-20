@@ -643,6 +643,14 @@ export namespace vmath
     {
         return a > b ? b : a;
     }
+    unsigned int umax(unsigned int a, unsigned int b)
+    {
+        return a > b ? a : b;
+    }
+    unsigned int umin(unsigned int a, unsigned int b)
+    {
+        return a > b ? b : a;
+    }
 
     vec<3> vmax(vec<3> v, vec<3> u)
     {
