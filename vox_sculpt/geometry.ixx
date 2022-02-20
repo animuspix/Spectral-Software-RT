@@ -22,14 +22,6 @@ namespace geometry
         static constexpr u32 width = 1024; // All volumes are 1024 * 1024 * 1024
         static constexpr u32 slice_area = width * width;
         static constexpr u32 res = slice_area * width;
-        static constexpr u32 chunk_res_x = 4;
-        static constexpr u32 chunk_res_y = 4;
-        static constexpr u32 chunk_res_z = 4;
-        static constexpr u32 num_chunks_x = width / chunk_res_x;
-        static constexpr u32 num_chunks_y = width / chunk_res_y;
-        static constexpr u32 num_chunks_z = width / chunk_res_z;
-        static constexpr u32 num_chunks_xy = num_chunks_x * num_chunks_y;
-        static constexpr u32 num_chunks = res / (chunk_res_x * chunk_res_y * chunk_res_z);
         static constexpr float cell_size = 1.0f / width;
         static constexpr u32 max_cell_ndx_per_axis = width - 1;
         struct transform_nfo
@@ -49,117 +41,172 @@ namespace geometry
             materials::instance mat;
             transform_nfo transf;
         };
-        vol_nfo metadata;
-        u64 cell_states[num_chunks]; // One bit/cell; order is left-right/front-back/top-bottom
-                                     // front view:
-                                     // 00 01 02 03
-                                     // 16 17 18 19
-                                     // 32 33 34 35
-                                     // 48 49 50 51
-                                     // top view:
-                                     // 00 01 02 03
-                                     // 04 05 06 07
-                                     // 08 09 10 11
-                                     // 12 13 14 15
-                                     // bottom view:
-                                     // 48 49 50 51
-                                     // 52 53 54 55
-                                     // 56 57 58 59
-                                     // 60 61 62 63
-                                     // To test:
-                                     // - Evaluate cell & 0b00000000; if zero, step two cells
-                                     // - If not zero, test the bit at the current intersection and branch (either step one cell forward, or evaluate the current material)
-        static constexpr u32 footprint = res + sizeof(vol_nfo);
-        static u32 index_solver(vmath::vec<3> uvw_floored, u64* out_bit_ndx_mask) // Returns chunk index directly, bitmask to select the cell within the chunk in [out_bit_ndx_mask]
+        static vol_nfo* metadata;
+
+        // Our geometry is composed of individual bits, grouped into 64-bit chunks;
+        // metachunks take that abstraction one layer higher by providing groups of 2x2x2
+        // chunks for efficient traversal (one metachunk is one cacheline)
+        // Individual voxels (within chunks) occupy one bit each; order is left-right/front-back/top-bottom
+        // front view:
+        // 00 01 02 03
+        // 16 17 18 19
+        // 32 33 34 35
+        // 48 49 50 51
+        // top view:
+        // 00 01 02 03
+        // 04 05 06 07
+        // 08 09 10 11
+        // 12 13 14 15
+        // bottom view:
+        // 48 49 50 51
+        // 52 53 54 55
+        // 56 57 58 59
+        // 60 61 62 63
+        // We evaluate these cells by constructing a 64-bit mask for the one we want to test; if the current chunk AND the mask is nonzero, we have a set cell, otherwise we have an empty one 
+        struct metachunk
         {
+            // Metachunk dimensions in chunks
+            static constexpr u32 res_x = 2;
+            static constexpr u32 res_y = 2;
+            static constexpr u32 res_z = 2;
+            static constexpr u32 res_xy = res_x * res_y;
+            static constexpr u32 res = res_xy * res_z;
+
+            // Chunk dimensions in voxels
+            static constexpr u32 chunk_res_x = 4;
+            static constexpr u32 chunk_res_y = 4;
+            static constexpr u32 chunk_res_z = 4;
+
+            // Metachunk dimensions in voxels
+            static constexpr u32 num_vox_x = res_x * chunk_res_x;
+            static constexpr u32 num_vox_y = res_y * chunk_res_y;
+            static constexpr u32 num_vox_z = res_z * chunk_res_z;
+            static constexpr u32 num_vox_xy = num_vox_x * num_vox_y;
+            static constexpr u32 num_vox = num_vox_xy * num_vox_z;
+
+            // Metachunk data
+            u64 chunks[res];
+
+            // Metachunk interfaces
+            void batch_assign(u8 value)
+            {
+                platform::osSetMem(chunks, value, sizeof(chunks)); // Assumes sizeof(chunks) is 512 (so array size, not pointer size)
+            }
+            bool batch_test()
+            {
+                return (chunks[0] |
+                        chunks[1] |
+                        chunks[2] |
+                        chunks[3] |
+                        chunks[4] |
+                        chunks[5] |
+                        chunks[6] |
+                        chunks[7]) > 0;
+            }
+        };
+        static constexpr u32 num_metachunks_x = width / metachunk::num_vox_x;
+        static constexpr u32 num_metachunks_y = width / metachunk::num_vox_y;
+        static constexpr u32 num_metachunks_z = width / metachunk::num_vox_z;
+        static constexpr u32 num_metachunks_xy = num_metachunks_x * num_metachunks_y;
+        static constexpr u32 num_metachunks = num_metachunks_xy * num_metachunks_z;
+        static metachunk* metachunks; 
+        static u32 chunk_index_solver(vmath::vec<3> uvw_floored) // Returns chunk index
+        {
+            auto uvw_metachunk_space = vmath::vec<3>(uvw_floored.x() / metachunk::num_vox_x,
+                                                     uvw_floored.y() / metachunk::num_vox_y,
+                                                     uvw_floored.z() / metachunk::num_vox_z);
+            auto uvw_chunk_space = vmath::vfloor(vmath::vfrac(uvw_metachunk_space) *
+                                                 vmath::vec<3>(metachunk::res_x, metachunk::res_y, metachunk::res_x));
+            return static_cast<u32>(uvw_chunk_space.x() + // Local scanline offset
+                                   (uvw_chunk_space.y() * metachunk::res_x) + // Local slice offset
+                                   (uvw_chunk_space.z() * metachunk::res_xy)); // Volume offset;
+        }
+        static u32 metachunk_index_solver(vmath::vec<3> uvw_floored) // Returns metachunk index
+        {
+            auto uvw_metachunk_space = vmath::vec<3>(uvw_floored.x() / metachunk::num_vox_x,
+                                                     uvw_floored.y() / metachunk::num_vox_y,
+                                                     uvw_floored.z() / metachunk::num_vox_z);
+            uvw_metachunk_space = vmath::vfloor(uvw_metachunk_space);
+            return static_cast<u32>(uvw_metachunk_space.x() + // Local scanline offset
+                                   (uvw_metachunk_space.y() * num_metachunks_x) + // Local slice offset
+                                   (uvw_metachunk_space.z() * num_metachunks_xy)); // Volume offset;
+        }
+        struct voxel_ndces
+        {
+            u8 metachunk;
+            u8 chunk;
+            u64 bitmask;
+        };
+        static voxel_ndces voxel_index_solver(vmath::vec<3> uvw_floored) // Returns metachunk + chunk + bitmask to select specific voxels within chunks
+                                                                         // [uvw_floored] is expected in voxel space (0...vol::width on each axis)
+        {
+            // Return payload
+            voxel_ndces ret;
+
+            // Compute voxel bitmask
             u8 bit_ndx = static_cast<u8>((floor(fmodf(uvw_floored.z(), 4.0f)) * 4) + // Z-axis, snapped into chunk space
                                          (floor(fmodf(uvw_floored.y(), 4.0f)) * 16) + // Y-axis, snapped into chunk space
                                          floor(fmodf(uvw_floored.x(), 4.0f))); // X-axis, snapped into chunk space
-            *out_bit_ndx_mask = 1ull << bit_ndx;
-            uvw_floored = vmath::vfloor(uvw_floored / 4.0f);
-            return static_cast<u32>(uvw_floored.x() + // Local scanline offset
-                                   (uvw_floored.y() * num_chunks_x) + // Local slice offset
-                                   (uvw_floored.z() * num_chunks_xy)); // Volume offset;
+            ret.bitmask = 1ull << bit_ndx;
+
+            // Compute chunk/metachunk indices
+            ret.chunk = chunk_index_solver(uvw_floored);
+            ret.metachunk = metachunk_index_solver(uvw_floored);
+
+            // Return
+            return ret;
         }
-        static vmath::vec<3> uvw_solver(u32 cell_ndx) // Designed for mapping [0...res] loop iterations into positions to simplify vmaths operations; not designed to work with bitfields
-                                                      // and chunk indices as input
+
+        // Generic 3D index solver, assuming euclidean grid space and taking an index, width metric, and area metric
+        template<u32 w, u32 a>
+        static vmath::vec<3> expand_ndx(u32 ndx)
         {
-            u32 single_page_ndx = cell_ndx % slice_area;
-            return vmath::vec<3>(static_cast<float>(single_page_ndx % width),
-                static_cast<float>(single_page_ndx / width),
-                static_cast<float>(cell_ndx / slice_area));
+            return vmath::vec<3>(static_cast<float>(ndx % w),
+                                 static_cast<float>((ndx % a) / w),
+                                 static_cast<float>(ndx / a));
         }
-        static vmath::vec<3> uvw_solver_chunked(u32 chunk_ndx)
+
+        // Generic 3D space flattener, implemented as the inverse of [expand_ndx(...)]
+        template<u32 w, u32 a>
+        static u32 flatten_ndx(vmath::vec<3> uvw)
         {
-            const u32 chunked_area = num_chunks_x * num_chunks_y;
-            const u32 chunked_width = num_chunks_x;
-            u32 single_page_ndx = chunk_ndx % chunked_area;
-            return vmath::vec<3>(static_cast<float>(single_page_ndx % chunked_width),
-                static_cast<float>(single_page_ndx / chunked_width),
-                static_cast<float>(chunk_ndx / chunked_area));
+            return uvw.x() +
+                   (uvw.y() * w) +
+                   (uvw.z() * a);
         }
 
         // Helper enum & functions to quickly parse chunk/cell data for intersection tests + cell updates
+        // Need to separate set_chunk_state and set_metachunk_state, also test_chunk_state and test_metachunk_state
         enum class CELL_STATUS
         {
             OCCUPIED,
             EMPTY
         };
-        void set_cell_state(CELL_STATUS status, vmath::vec<3> uvw_floored)
+        static CELL_STATUS test_voxel_state(u32 metachunk_ndx, u32 chunk_ndx, u64 voxel_selector)
         {
-            u64 bit_selector = 0x0;
-            u32 chunk_ndx = index_solver(uvw_floored, &bit_selector);
-            u64& s = cell_states[chunk_ndx];
-            if (status == CELL_STATUS::OCCUPIED) s |= bit_selector;
-            else { s &= ~bit_selector; }
+            return (metachunks[metachunk_ndx].chunks[chunk_ndx] & voxel_selector) > 0 ? CELL_STATUS::OCCUPIED :
+                                                                                        CELL_STATUS::EMPTY;
         }
-        void set_chunk_state(u64 state, u32 chunk_ndx)
+        static CELL_STATUS test_chunk_state(u32 metachunk_ndx, u32 chunk_ndx)
         {
-            cell_states[chunk_ndx] = state;
+            return metachunks[metachunk_ndx].chunks[chunk_ndx] > 0 ? CELL_STATUS::OCCUPIED :
+                                                                     CELL_STATUS::EMPTY;
         }
-        CELL_STATUS test_cell_state(vmath::vec<3> uvw_floored)
+        static CELL_STATUS test_metachunk_state(u32 metachunk_ndx)
         {
-            u64 bit_selector = 0x0;
-            u32 chunk_ndx = index_solver(uvw_floored, &bit_selector);
-            u64 s = cell_states[chunk_ndx];
-            if (s > 0)
-            {
-                return (s & bit_selector) > 0 ? CELL_STATUS::OCCUPIED :
-                                                CELL_STATUS::EMPTY;
-            }
-            else
-            {
-                // Zero state, no voxels are set, return immediately
-                return CELL_STATUS::EMPTY;
-            }
-        }
-
-        // Just coarser-grained [test_cell_state], possibly useful for quickly skipping throuhg geometry
-        CELL_STATUS test_chunk_state(vmath::vec<3> uvw_floored)
-        {
-            u64 bit_selector = 0x0;
-            u32 chunk_ndx = index_solver(uvw_floored, &bit_selector);
-            u64 s = cell_states[chunk_ndx];
-            if (s > 0)
-            {
-                return CELL_STATUS::OCCUPIED;
-            }
-            else
-            {
-                // Zero state, no voxels are set, return immediately
-                return CELL_STATUS::EMPTY;
-            }
+            return metachunks[metachunk_ndx].batch_test() ? CELL_STATUS::OCCUPIED :
+                                                            CELL_STATUS::EMPTY;
         }
 
         // Resolve screen-space volume bounds for the current camera transform
         // (inverse lens sampling performed on the camera, so this just needs to resolve worldspace bounds and reproject them that way, before
         // taking the min/max coordinates in the 2D plane and storing those)
-        void resolveSSBounds(vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
+        static void resolveSSBounds(vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
         {
             // Resolve worldspace extents for our volume AABB
             // Will eventually need to adjust this code for different camera angles, zoom, panning, etc.
-            const vmath::vec<3> vol_p = metadata.transf.pos;
-            const vmath::vec<3> vol_extents = metadata.transf.scale * 0.5f;
+            const vmath::vec<3> vol_p = metadata->transf.pos;
+            const vmath::vec<3> vol_extents = metadata->transf.scale * 0.5f;
 
             // Volume AABB vertices, from left->right, top->bottom, and front->back
             ///////////////////////////////////////////////////////////////////////
@@ -196,91 +243,81 @@ namespace geometry
                 min_max_px.e[2] = vmath::fmax(min_max_px.e[2], vx);
                 min_max_px.e[3] = vmath::fmax(min_max_px.e[3], vy);
             }
-            metadata.transf.ss_v0 = min_max_px.xy(); // Min, min
-            metadata.transf.ss_v1 = vmath::vec<2>(min_max_px.x(), min_max_px.w()); // Min, max
-            metadata.transf.ss_v2 = vmath::vec<2>(min_max_px.z(), min_max_px.y()); // Max, min
-            metadata.transf.ss_v3 = min_max_px.zw(); // Max, max
+            metadata->transf.ss_v0 = min_max_px.xy(); // Min, min
+            metadata->transf.ss_v1 = vmath::vec<2>(min_max_px.x(), min_max_px.w()); // Min, max
+            metadata->transf.ss_v2 = vmath::vec<2>(min_max_px.z(), min_max_px.y()); // Max, min
+            metadata->transf.ss_v3 = min_max_px.zw(); // Max, max
         }
     };
 
-    // Core volume info :D
-    export vol* volume;
-
     // Volume initializer, either loads voxels from disk or generates them procedurally on startup
+    // Loop through metachunks, and for each metachunk run the existing bounds test;
+    // if the bounds test fails/passes at the metachunk level set that metachunk directly and skip ahead, if it fails at the chunk level
+    // set that chunk directly and skip ahead, etc.
     void geom_setup(u16 num_tiles_x, u16 num_tiles_y, u16 tile_ndx)
     {
         const u32 num_tiles = static_cast<u32>(num_tiles_x) * num_tiles_y;
-        const u32 slice_width = vol::num_chunks_z / num_tiles; // Width for most slices except the last one, good enough for offset maths
+        const u32 slice_width = vol::num_metachunks_z / num_tiles; // Width for most slices except the last one, good enough for offset maths
         const u32 init_z = static_cast<u32>(tile_ndx) * slice_width;
-        const u32 max_z = vol::num_chunks_z - init_z;
-        constexpr float r2 = 512.0f * 512.0f;
-        constexpr float r2_shell_outer = (512.0f + (vol::chunk_res_x * 2.0f)) *
-                                         (512.0f + (vol::chunk_res_x * 2.0f));
-        constexpr float r2_shell_inner = (512.0f - (vol::chunk_res_x * 2.0f)) *
-                                         (512.0f - (vol::chunk_res_x * 2.0f));
-        const vmath::vec<3> circOrigin(512, 512, 512);
-        u32 chunk_ctr = init_z * vol::num_chunks_xy;
-        for (u32 i = init_z; i < max_z; i += 1)
+        const u32 max_z = vmath::umin(init_z + slice_width, vol::num_metachunks_z - init_z);
+
+        // Scale sphere into metachunk space
+        constexpr float metachunk_ori = (vol::width / vol::metachunk::num_vox_x) / 2;
+        constexpr float r = metachunk_ori;
+        constexpr float r2 = r * r;
+        const vmath::vec<3> circOrigin(metachunk_ori,
+                                       metachunk_ori,
+                                       metachunk_ori);
+
+        // Scale z-slices into metachunk space
+        u32 metachunk_ctr = init_z * vol::num_metachunks_xy;
+        u32 metachunk_ndx_min = vol::flatten_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(vmath::vec<3>(0, 0, init_z));
+        u32 metachunk_ndx_max = vol::flatten_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(vmath::vec<3>(vol::num_metachunks_x - 1,
+                                                                                                              vol::num_metachunks_y - 1,
+                                                                                                              max_z));
+
+        // Set-up slices
+//#define TEST_NOISE_CUBE
+//#define TEST_SPHERE
+//#define TEST_CUBE
+#if !defined(TEST_CUBE) && !defined(TEST_SPHERE)
+        float sample[4];
+#endif
+        for (u32 i = metachunk_ndx_min; i < metachunk_ndx_max; i++)
         {
-            for (u32 j = 0; j < vol::num_chunks_y; j += 1)
+#ifndef TEST_NOISE_CUBE
+#ifndef TEST_CUBE
+            const vmath::vec<3> uvw = vol::expand_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(i);
+            const float d = (uvw - circOrigin).sqr_magnitude() - r2; // Sphere SDF
+            u8 v = 0;
+            if (d < 0.0f)
             {
-                for (u32 k = 0; k < vol::num_chunks_x; k += 1)
-                {
-                    vmath::vec<3> chunk_uvw = vmath::vec<3>((float)k, (float)j, (float)i) *
-                                              vmath::vec<3>(vol::chunk_res_x,
-                                                            vol::chunk_res_y,
-                                                            vol::chunk_res_z); // Scale up coordinates to meet the corners of each chunk in the volume grid
-                    vmath::vec<3> disp_from_ori = circOrigin - chunk_uvw;
-                    u32 x, y, z;
-                    u64 chunk = 0;
-                    const float conservative_dist = disp_from_ori.sqr_magnitude();
-                    if (conservative_dist < r2_shell_outer) // Conservatively check if any cells in the chunk could be nonzero before testing them
-                                                            // Future versions will encode empty runs into the files storing a volume and compare against those
-                                                            // runs when they decide whether to process a chunk
-                    {
-                        // Huge thanks to nightchild on GP discord for the inspiration :D
-                        if (conservative_dist > r2_shell_inner)
-                        {
-                            for (u32 cell = 0; cell < 64; cell++)
-                            {
-                                // front view:
-                                // 00 01 02 03
-                                // 16 17 18 19
-                                // 32 33 34 35
-                                // 48 49 50 51
-                                // top view:
-                                // 00 01 02 03
-                                // 04 05 06 07
-                                // 08 09 10 11
-                                // 12 13 14 15
-                                // bottom view:
-                                // 48 49 50 51
-                                // 52 53 54 55
-                                // 56 57 58 59
-                                // 60 61 62 63
-                                x = cell % vol::chunk_res_x;
-                                y = cell / (vol::chunk_res_x * vol::chunk_res_y);
-                                z = cell / vol::chunk_res_x;
-                                if ((disp_from_ori - vmath::vec<3>((float)x, (float)y, (float)z)).sqr_magnitude() < r2) chunk |= 1ull << cell;
-                            }
-                        }
-                        else
-                        {
-                            // Chunks within the innner shell are definitely completely filled, so flush them here and avoid the loop above
-                            chunk = 0xffffffffffffffff;
-                        }
-                    }
-                    volume->set_chunk_state(chunk, chunk_ctr);
-                    chunk_ctr++;
-                }
+                parallel::rand_streams[tile_ndx].next(sample);
+#ifdef TEST_SPHERE
+                v = 255;
+#else
+                v = 128 + (128 * sample[0]);
+#endif
             }
+            vol::metachunks[i].batch_assign(v);
+#else
+            vol::metachunks[i].batch_assign(255);
+#endif
+#else
+            parallel::rand_streams[tile_ndx].next(sample);
+            platform::osCpyMem(vol::metachunks[i].chunks, sample, sizeof(float) * 4);
+            platform::osCpyMem(vol::metachunks[i].chunks + 2, sample, sizeof(float) * 4);
+            platform::osCpyMem(vol::metachunks[i].chunks + 4, sample, sizeof(float) * 4);
+            platform::osCpyMem(vol::metachunks[i].chunks + 6, sample, sizeof(float) * 4);
+#endif
         };
     }
 
     export void init(vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
     {
         // Allocate volume memory
-        volume = mem::allocate_tracing<vol>(vol::footprint); // Generalized volume info
+        vol::metadata = mem::allocate_tracing<vol::vol_nfo>(sizeof(vol::vol_nfo)); // Generalized volume info
+        vol::metachunks = mem::allocate_tracing<vol::metachunk>(vol::num_metachunks * sizeof(vol::metachunk)); // Generalized volume info
 
         // Load/generate geometry
 //#define TIMED_GEOMETRY_UPLOAD
@@ -310,13 +347,13 @@ namespace geometry
 
         // Update transform metadata; eventually this should be loaded from disk
         // (position should probably be actually zeroed, there's no reason for users to modify it instead of moving the camera)
-        volume->metadata.transf.pos = vmath::vec<3>(0.0f, 0.0f, 20.0f);
-        volume->metadata.transf.orientation = vmath::vec<4>(0.0f, 0.0f, 0.0f, 1.0f);
-        volume->metadata.transf.scale = vmath::vec<3>(4, 4, 4); // Boring regular unit scale
-        volume->resolveSSBounds(inverse_lens_sampler_fn);
+        vol::metadata->transf.pos = vmath::vec<3>(0.0f, 0.0f, 20.0f);
+        vol::metadata->transf.orientation = vmath::vec<4>(0.0f, 0.0f, 0.0f, 1.0f);
+        vol::metadata->transf.scale = vmath::vec<3>(4, 4, 4); // Boring regular unit scale
+        vol::resolveSSBounds(inverse_lens_sampler_fn);
 
         // Update material metadata; eventually this should be loaded from disk
-        materials::instance& boxMat = volume->metadata.mat;
+        materials::instance& boxMat = vol::metadata->mat;
         boxMat.material_type = material_labels::DIFFUSE;
         boxMat.roughness = 0.2f;
         boxMat.spectral_ior = vmath::fn<4, const float>(spectra::placeholder_spd);
@@ -328,9 +365,9 @@ namespace geometry
     export bool test(vmath::vec<3> dir, vmath::vec<3>* ro_inout, geometry::vol::vol_nfo* vol_nfo_out)
     {
         // Import object properties
-        const vmath::vec<3> extents = volume->metadata.transf.scale * 0.5f; // Extents from object origin
-        const vmath::vec<3> pos = volume->metadata.transf.pos;
-        const vmath::vec<4> orientation = volume->metadata.transf.orientation;
+        const vmath::vec<3> extents = vol::metadata->transf.scale * 0.5f; // Extents from object origin
+        const vmath::vec<3> pos = vol::metadata->transf.pos;
+        const vmath::vec<4> orientation = vol::metadata->transf.orientation;
 
         // Intersection vmath adapted from
         // https://www.shadertoy.com/view/ltKyzm, itself adapted from the Scratchapixel tutorial here:
@@ -374,7 +411,7 @@ namespace geometry
         if (isect)
         {
             *ro_inout = *ro_inout + (dir * sT.e[0]);
-            *vol_nfo_out = volume->metadata;
+            *vol_nfo_out = *vol::metadata;
             return true;
         }
         return false;
@@ -414,7 +451,8 @@ namespace geometry
         // We only traverse primary rays with an empty starting cell (since otherwise we can return immediately)
         // For non-primary rays (bounce rays) we ignore the starting cell and iterate through any others along the ray
         // direction
-        bool traversing = primary_ray ? volume->test_cell_state(*uvw_i_inout) == vol::CELL_STATUS::EMPTY : true;
+        const vol::voxel_ndces init_ndces = vol::voxel_index_solver(*uvw_i_inout);
+        bool traversing = primary_ray ? vol::test_voxel_state(init_ndces.metachunk, init_ndces.chunk, init_ndces.bitmask) == vol::CELL_STATUS::EMPTY : true;
 
         // Core traversal loop/immediate return
         if (traversing)
@@ -435,24 +473,33 @@ namespace geometry
 
             // DDA
             u8 min_axis = 0; // Smallest axis in our traversal vector, used to determine which direction to step through in each tap
+            u32 metachunk_ndx = init_ndces.metachunk; // Saved on metachunk intersection to simplify chunk lookups
+            u32 chunk_ndx = init_ndces.chunk; // Saved on chunk intersection to simplify voxel lookups
             bool cell_found = false;
+            enum TRAVERSAL_MODE
+            {
+                METACHUNK,
+                CHUNK,
+                VOXEL
+            };
+            TRAVERSAL_MODE mode = METACHUNK; // Is our DDA currently running on chunks, metachunks, or voxels?
             while (!cell_found)
             {
-                // Eventually should run a coarse test per-chunk here, followed by a fine test for nonzero chunks
-                // (doable by modifying the step size & switching between testing at the chunk level vs testing at the voxel level,
-                // much cheaper than nested loops)
-                /////////////////////////////////////////////////////////////////////////////////////////////////
-
                 // Minimize divergence from the ideal path through [dir] by always incrementing our smallest axis
                 min_axis = t.x() < t.y() && t.x() < t.z() ? 0 :
                            t.y() < t.x() && t.y() < t.z() ? 1 :
                            /* d_pos.x() < d_pos.y() || d_pos.x() <= d_pos.z() */ 2 /* : 0*/;
 
+                // Scale our step sizes differently for different traversal granularities
+                const float dda_res = mode == METACHUNK ? vol::metachunk::num_vox_x :
+                                              CHUNK ? vol::metachunk::chunk_res_x :
+                                              /*VOXEL ? */1.0f;
+
                 // We want to weight each continuous step by its axis' contribution to the slope of the ray direction
-                t.e[min_axis] += g.e[min_axis]; // Optional scale here for chunk traversal
+                t.e[min_axis] += g.e[min_axis] * dda_res; // Optional scale here for metachunk traversal
 
                 // Update our current voxel coordinate
-                uvw_floored.e[min_axis] += d_uvw.e[min_axis]; // Optional scale here for chunk traversal
+                uvw_floored.e[min_axis] += d_uvw.e[min_axis] * dda_res; // Optional scale here for metachunk traversal
 
                 // Ray escaped the volume :o
                 if (vmath::anyGreater(uvw_floored, vol::width - 1) || vmath::anyLesser(uvw_floored, 0))
@@ -462,11 +509,39 @@ namespace geometry
                     break;
                 }
 
-                // Successful intersection :D
-                if (volume->test_cell_state(uvw_floored) == vol::CELL_STATUS::OCCUPIED)
+                // Successful intersections :D
+                // (or possibly rays passing through lower levels without hitting anything - move back up to higher levels in that case)
+                if (mode == METACHUNK)
                 {
-                    cell_found = true;
-                    break;
+                    metachunk_ndx = vol::metachunk_index_solver(uvw_floored);
+                    if (vol::test_metachunk_state(metachunk_ndx) == vol::CELL_STATUS::OCCUPIED) mode = CHUNK;
+                }
+                else if (mode == CHUNK)
+                {
+                    chunk_ndx = vol::chunk_index_solver(uvw_floored);
+                    if (vol::test_chunk_state(metachunk_ndx, chunk_ndx) == vol::CELL_STATUS::OCCUPIED) mode = VOXEL;
+                    else if (metachunk_ndx != vol::metachunk_index_solver(uvw_floored)) mode = METACHUNK;
+                }
+                else if (mode == VOXEL)
+                {
+                    const vol::voxel_ndces ndces = vol::voxel_index_solver(uvw_floored);
+                    if (vol::test_voxel_state(metachunk_ndx, chunk_ndx, ndces.bitmask) == vol::CELL_STATUS::OCCUPIED)
+                    {
+                        cell_found = true;
+                        //platform::osDebugLogFmt("thread %i hit a voxel ", platform::threads::osGetThreadId());
+                        break;
+                    }
+                    else if (chunk_ndx != ndces.chunk)
+                    {
+                        if (metachunk_ndx != ndces.metachunk)
+                        {
+                            mode = METACHUNK;
+                        }
+                        else
+                        {
+                            mode = CHUNK;
+                        }
+                    }
                 }
             }
 
@@ -498,12 +573,12 @@ namespace geometry
             // Reversed math
             vmath::vec<3> ro = uvw_floored;// + (dir * t.magnitude()); // Apply position delta
             ro /= vol::width; // Back to UVW space (0...1)
-            ro *= volume->metadata.transf.scale; // Back to object space
-            ro -= volume->metadata.transf.scale * 0.5f; // Position relative to centre, not lower corner
-            ro += volume->metadata.transf.pos; // Back to worldspace :D
+            ro *= vol::metadata->transf.scale; // Back to object space
+            ro -= vol::metadata->transf.scale * 0.5f; // Position relative to centre, not lower corner
+            ro += vol::metadata->transf.pos; // Back to worldspace :D
             ro = vmath::clamp(ro,
-                              vmath::vec<3>(volume->metadata.transf.pos - volume->metadata.transf.scale * 0.5f),
-                              vmath::vec<3>(volume->metadata.transf.pos + volume->metadata.transf.scale * 0.5f));
+                              vmath::vec<3>(vol::metadata->transf.pos - vol::metadata->transf.scale * 0.5f),
+                              vmath::vec<3>(vol::metadata->transf.pos + vol::metadata->transf.scale * 0.5f));
             *ro_inout = ro;
 
             // Return cell discovery state
@@ -513,6 +588,7 @@ namespace geometry
         else
         {
             // If we're testing a primary ray, and the current UVW coordinate is filled, we've instantly found a cell :p
+            //platform::osDebugLogFmt("thread %i hit a nonzero starting cell \n", platform::threads::osGetThreadId());
             return true;
         }
     }

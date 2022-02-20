@@ -260,6 +260,11 @@ void platform::threads::osWaitForSignal(platform::threads::osAtomicInt* messenge
     { /* Busy wait */ }
 }
 
+u32 platform::threads::osGetThreadId()
+{
+    return GetCurrentThreadId();
+}
+
 void platform::threads::osThreadGeneric::osWaitForExecution()
 {
     WaitForSingleObject(handle, INFINITE);
@@ -366,8 +371,9 @@ void platform::osDebugLog(const char* str_const)
 
 void platform::osDebugLog(char* str, u32 len_printable)
 {
-    assert(len_printable <= std::strlen(str)); // Output limits cannot be higher than string lengths
-    str[len_printable] = 0;
+    const u16 len = std::strlen(str) + 1; // sprintf skips the null terminator, so account for that here
+    assert(len_printable <= len); // Output limits cannot be higher than string lengths
+    str[len_printable] = 0; // Add the missing null terminator back here
     OutputDebugStringA(str);
 }
 
@@ -411,4 +417,9 @@ void platform::osClearMem(void* address, u32 length)
 void platform::osSetMem(void* address, u8 byte_pattern, u32 length)
 {
     memset(address, byte_pattern, length);
+}
+
+void platform::osCpyMem(void* dst, void* src, u64 size)
+{
+    memcpy(dst, src, size);
 }

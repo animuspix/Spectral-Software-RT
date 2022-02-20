@@ -612,6 +612,14 @@ export namespace vmath
                       ffloor(v.e[2]));
     }
 
+    float ffrac(float f);
+    vec<3> vfrac(vec<3> v)
+    {
+        return vec<3>(ffrac(v.e[0]),
+                      ffrac(v.e[1]),
+                      ffrac(v.e[2]));
+    }
+
     float fceil(float f);
     vec<3> vceil(vec<3> v)
     {
@@ -632,6 +640,14 @@ export namespace vmath
         return a > b ? a : b;
     }
     float fmin(float a, float b)
+    {
+        return a > b ? b : a;
+    }
+    unsigned int umax(unsigned int a, unsigned int b)
+    {
+        return a > b ? a : b;
+    }
+    unsigned int umin(unsigned int a, unsigned int b)
     {
         return a > b ? b : a;
     }

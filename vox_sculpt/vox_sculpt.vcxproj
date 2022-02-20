@@ -158,6 +158,7 @@
   <ItemGroup>
     <ClCompile Include="aa.ixx" />
     <ClCompile Include="camera.ixx" />
+    <ClCompile Include="geometry.cpp" />
     <ClCompile Include="geometry.ixx" />
     <ClCompile Include="lights.ixx" />
     <ClCompile Include="materials.ixx" />
