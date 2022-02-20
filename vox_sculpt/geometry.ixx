@@ -62,7 +62,7 @@ namespace geometry
         // 52 53 54 55
         // 56 57 58 59
         // 60 61 62 63
-        // We evaluate these cells by constructing a 64-bit mask for the one we want to test; if the current chunk AND the mask is nonzero, we have a set cell, otherwise we have an empty one 
+        // We evaluate these cells by constructing a 64-bit mask for the one we want to test; if the current chunk AND the mask is nonzero, we have a set cell, otherwise we have an empty one
         struct metachunk
         {
             // Metachunk dimensions in chunks
@@ -109,7 +109,7 @@ namespace geometry
         static constexpr u32 num_metachunks_z = width / metachunk::num_vox_z;
         static constexpr u32 num_metachunks_xy = num_metachunks_x * num_metachunks_y;
         static constexpr u32 num_metachunks = num_metachunks_xy * num_metachunks_z;
-        static metachunk* metachunks; 
+        static metachunk* metachunks;
         static u32 chunk_index_solver(vmath::vec<3> uvw_floored) // Returns chunk index
         {
             auto uvw_metachunk_space = vmath::vec<3>(uvw_floored.x() / metachunk::num_vox_x,
@@ -133,8 +133,8 @@ namespace geometry
         }
         struct voxel_ndces
         {
-            u8 metachunk;
             u8 chunk;
+            u32 metachunk;
             u64 bitmask;
         };
         static voxel_ndces voxel_index_solver(vmath::vec<3> uvw_floored) // Returns metachunk + chunk + bitmask to select specific voxels within chunks
@@ -278,37 +278,95 @@ namespace geometry
 
         // Set-up slices
 //#define TEST_NOISE_CUBE
-//#define TEST_SPHERE
-//#define TEST_CUBE
-#if !defined(TEST_CUBE) && !defined(TEST_SPHERE)
-        float sample[4];
+//#define TEST_SOLID_CUBE
+//#define TEST_SOLID_SPHERE
+#if !defined(TEST_SOLID_CUBE) && !defined(TEST_SOLID_SPHERE)
+        float sample[8];
 #endif
         for (u32 i = metachunk_ndx_min; i < metachunk_ndx_max; i++)
         {
+#ifndef TEST_SOLID_SPHERE
 #ifndef TEST_NOISE_CUBE
-#ifndef TEST_CUBE
+#ifndef TEST_SOLID_CUBE
             const vmath::vec<3> uvw = vol::expand_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(i);
             const float d = (uvw - circOrigin).sqr_magnitude() - r2; // Sphere SDF
-            u8 v = 0;
-            if (d < 0.0f)
+            sample[0] = 0.6f;
+            if (d < 0.0f && sample[0] > 0.5f)
             {
                 parallel::rand_streams[tile_ndx].next(sample);
-#ifdef TEST_SPHERE
-                v = 255;
-#else
-                v = 128 + (128 * sample[0]);
-#endif
+                parallel::rand_streams[tile_ndx].next(sample + 4);
+                u64* chunks = vol::metachunks[i].chunks;
+
+                // Fuzzy version of the metachunk sphere above, with occasional fireflies
+                float t = 1.0f - (vmath::fabs(d) / r2);
+                t *= t;
+                const double soften = vmath::lerp<double>(static_cast<double>(0x33333333), static_cast<double>(0xffffffff), t);
+                u64 soften_fac = static_cast<u64>(soften);
+                soften_fac |= 0xffffffffull << 4ull;
+                chunks[0] = static_cast<u64>(sample[0] * 0xffffffffffffffff) | soften_fac;
+                chunks[1] = static_cast<u64>(sample[1] * 0xffffffffffffffff) | soften_fac;
+                chunks[2] = static_cast<u64>(sample[2] * 0xffffffffffffffff) | soften_fac;
+                chunks[3] = static_cast<u64>(sample[3] * 0xffffffffffffffff) | soften_fac;
+                chunks[4] = static_cast<u64>(sample[4] * 0xffffffffffffffff) | soften_fac;
+                chunks[5] = static_cast<u64>(sample[5] * 0xffffffffffffffff) | soften_fac;
+                chunks[6] = static_cast<u64>(sample[6] * 0xffffffffffffffff) | soften_fac;
+                chunks[7] = static_cast<u64>(sample[7] * 0xffffffffffffffff) | soften_fac;
+
+                // Fuzzy plus sign
+                //chunks[0] = static_cast<u64>(sample[0] * 0xffffffffffffffff) | 0x7777ffffffffffff;
+                //chunks[1] = static_cast<u64>(sample[1] * 0xffffffffffffffff) | 0xffff7777ffffffff;
+                //chunks[2] = static_cast<u64>(sample[2] * 0xffffffffffffffff) | 0xffffffff7777ffff;
+                //chunks[3] = static_cast<u64>(sample[3] * 0xffffffffffffffff) | 0xffffffffffff7777;
+                //chunks[4] = static_cast<u64>(sample[4] * 0xffffffffffffffff) | 0xffffffff7777ffff;
+                //chunks[5] = static_cast<u64>(sample[5] * 0xffffffffffffffff) | 0xffff7777ffffffff;
+                //chunks[6] = static_cast<u64>(sample[6] * 0xffffffffffffffff) | 0x7777ffffffffffff;
+                //chunks[7] = static_cast<u64>(sample[7] * 0xffffffffffffffff) | 0x7f7f7f7f7f7f7f7f;
+
+                // Kinda cool fuzzy oval shape - lke some kind of polarized sphere, noisy in the middle and bow shapes on either side
+                //chunks[0] = static_cast<u64>(sample[0] * 0xffffffffffffffff) | 0x77777777ffffffff;
+                //chunks[1] = static_cast<u64>(sample[1] * 0xffffffffffffffff) | 0xffffffff77777777;
+                //chunks[2] = static_cast<u64>(sample[2] * 0xffffffffffffffff) | 0x77777777ffffffff;
+                //chunks[3] = static_cast<u64>(sample[3] * 0xffffffffffffffff) | 0xffffffff77777777;
+                //chunks[4] = static_cast<u64>(sample[4] * 0xffffffffffffffff) | 0x77777777ffffffff;
+                //chunks[5] = static_cast<u64>(sample[5] * 0xffffffffffffffff) | 0xffffffff77777777;
+                //chunks[6] = static_cast<u64>(sample[6] * 0xffffffffffffffff) | 0x77777777ffffffff;
+                //chunks[7] = static_cast<u64>(sample[7] * 0xffffffffffffffff) | 0xffffffff77777777;
             }
-            vol::metachunks[i].batch_assign(v);
+            else
+            {
+                vol::metachunks[i].batch_assign(0);
+            }
 #else
             vol::metachunks[i].batch_assign(255);
 #endif
 #else
+            // Load chunk data
+            u64* chunks = vol::metachunks[i].chunks;
+
+            // Structural noise for clumping effects without excessively fine detail
+            // (which was sampled out in prior versions)
+
+            // Generate random values
             parallel::rand_streams[tile_ndx].next(sample);
-            platform::osCpyMem(vol::metachunks[i].chunks, sample, sizeof(float) * 4);
-            platform::osCpyMem(vol::metachunks[i].chunks + 2, sample, sizeof(float) * 4);
-            platform::osCpyMem(vol::metachunks[i].chunks + 4, sample, sizeof(float) * 4);
-            platform::osCpyMem(vol::metachunks[i].chunks + 6, sample, sizeof(float) * 4);
+            parallel::rand_streams[tile_ndx].next(sample + 4);
+
+            // Modulate first four chunks (first RNG tap)
+            chunks[0] = static_cast<u64>(sample[0] * 0xffffffffffffffff) & 0x7fffffffffffffff;
+            chunks[1] = static_cast<u64>(sample[1] * 0xffffffffffffffff) & 0x7fffffffffffffff;
+            chunks[2] = static_cast<u64>(sample[2] * 0xffffffffffffffff) & 0x7fffffffffffffff;
+            chunks[3] = static_cast<u64>(sample[3] * 0xffffffffffffffff) & 0x7fffffffffffffff;
+
+            // Modulate next four chunks (second RNG tap)
+            chunks[4] = static_cast<u64>(sample[4] * 0xffffffffffffffff) | 0x7fffffffffffffff;
+            chunks[5] = static_cast<u64>(sample[5] * 0xffffffffffffffff) | 0x7fffffffffffffff;
+            chunks[6] = static_cast<u64>(sample[6] * 0xffffffffffffffff) | 0x7fffffffffffffff;
+            chunks[7] = static_cast<u64>(sample[7] * 0xffffffffffffffff) | 0x7fffffffffffffff;
+#endif
+#else
+            const vmath::vec<3> uvw = vol::expand_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(i);
+            const float d = (uvw - circOrigin).sqr_magnitude() - r2; // Sphere SDF
+            u8 v = d < 0.0f ? 0xff : 0x0;
+            vol::metachunks[i].batch_assign(v);
 #endif
         };
     }
@@ -519,13 +577,15 @@ namespace geometry
                 else if (mode == CHUNK)
                 {
                     chunk_ndx = vol::chunk_index_solver(uvw_floored);
-                    if (vol::test_chunk_state(metachunk_ndx, chunk_ndx) == vol::CELL_STATUS::OCCUPIED) mode = VOXEL;
-                    else if (metachunk_ndx != vol::metachunk_index_solver(uvw_floored)) mode = METACHUNK;
+                    u32 local_metachunk_ndx = vol::metachunk_index_solver(uvw_floored);
+                    if (vol::test_chunk_state(local_metachunk_ndx, chunk_ndx) == vol::CELL_STATUS::OCCUPIED) mode = VOXEL;
+                    else if (metachunk_ndx != local_metachunk_ndx) mode = METACHUNK;
+                    metachunk_ndx = local_metachunk_ndx;
                 }
                 else if (mode == VOXEL)
                 {
                     const vol::voxel_ndces ndces = vol::voxel_index_solver(uvw_floored);
-                    if (vol::test_voxel_state(metachunk_ndx, chunk_ndx, ndces.bitmask) == vol::CELL_STATUS::OCCUPIED)
+                    if (vol::test_voxel_state(ndces.metachunk, ndces.chunk, ndces.bitmask) == vol::CELL_STATUS::OCCUPIED)
                     {
                         cell_found = true;
                         //platform::osDebugLogFmt("thread %i hit a voxel ", platform::threads::osGetThreadId());
@@ -541,6 +601,8 @@ namespace geometry
                         {
                             mode = CHUNK;
                         }
+                        chunk_ndx = ndces.chunk;
+                        metachunk_ndx = ndces.metachunk;
                     }
                 }
             }
