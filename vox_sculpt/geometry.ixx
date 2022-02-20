@@ -46,6 +46,23 @@ namespace geometry
         // Our geometry is composed of individual bits, grouped into 64-bit chunks;
         // metachunks take that abstraction one layer higher by providing groups of 2x2x2
         // chunks for efficient traversal (one metachunk is one cacheline)
+        // Individual voxels (within chunks) occupy one bit each; order is left-right/front-back/top-bottom
+        // front view:
+        // 00 01 02 03
+        // 16 17 18 19
+        // 32 33 34 35
+        // 48 49 50 51
+        // top view:
+        // 00 01 02 03
+        // 04 05 06 07
+        // 08 09 10 11
+        // 12 13 14 15
+        // bottom view:
+        // 48 49 50 51
+        // 52 53 54 55
+        // 56 57 58 59
+        // 60 61 62 63
+        // We evaluate these cells by constructing a 64-bit mask for the one we want to test; if the current chunk AND the mask is nonzero, we have a set cell, otherwise we have an empty one 
         struct metachunk
         {
             // Metachunk dimensions in chunks
@@ -92,25 +109,7 @@ namespace geometry
         static constexpr u32 num_metachunks_z = width / metachunk::num_vox_z;
         static constexpr u32 num_metachunks_xy = num_metachunks_x * num_metachunks_y;
         static constexpr u32 num_metachunks = num_metachunks_xy * num_metachunks_z;
-        static metachunk* metachunks; // One bit/cell; order is left-right/front-back/top-bottom
-                                       // front view:
-                                       // 00 01 02 03
-                                       // 16 17 18 19
-                                       // 32 33 34 35
-                                       // 48 49 50 51
-                                       // top view:
-                                       // 00 01 02 03
-                                       // 04 05 06 07
-                                       // 08 09 10 11
-                                       // 12 13 14 15
-                                       // bottom view:
-                                       // 48 49 50 51
-                                       // 52 53 54 55
-                                       // 56 57 58 59
-                                       // 60 61 62 63
-                                       // To test:
-                                       // - Evaluate cell & 0b00000000; if zero, step two cells
-                                       // - If not zero, test the bit at the current intersection and branch (either step one cell forward, or evaluate the current material)
+        static metachunk* metachunks; 
         static u32 chunk_index_solver(vmath::vec<3> uvw_floored) // Returns chunk index
         {
             auto uvw_metachunk_space = vmath::vec<3>(uvw_floored.x() / metachunk::num_vox_x,
