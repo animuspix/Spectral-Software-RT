@@ -60,30 +60,41 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     bool tracing_prepass_completed = false;
     double rt_t = platform::osGetCurrentTimeSeconds();
 #endif
+    double t = platform::osGetCurrentTimeMilliSeconds();
+    double dt = 0;
+    u32 frontend_ticks = 0;
+    u32 present_interval = 20;
 
     // Main message loop:
-    u64 frameCtr = 0;
     MSG msg;
     backBuf = mem::allocate_tracing<u32>(camera::digital_colors_footprint);
     while (GetMessage(&msg, nullptr, 0, 0))
     {
         // Update colors for rendering
         // Just one tile at a time, so we spend less time blocking render code ^_^
-        for (u8 i = 0; i < parallel::numTiles; i++)
+        // Modified again - checking tiles every 30ms instead of every frame
+        if (frontend_ticks % present_interval == 0) // Aiming to scan for copies every 30ms, ~30fps
         {
-            if (parallel::tiles[i].messaging->load())
+            for (u8 i = 0; i < parallel::numTiles; i++)
             {
-                const u16 bound_y_min = static_cast<u16>(tracing::tracing_tile_positions[i].y());
-                const u16 bound_y_max = static_cast<u16>(tracing::tracing_tile_bounds[i].y());
-                const u16 bound_x_min = static_cast<u16>(tracing::tracing_tile_positions[i].x());
-                const u16 tile_width = static_cast<u16>(tracing::tracing_tile_sizes[i].x());
-                for (u16 j = bound_y_min; j < bound_y_max; j++)
+                if (parallel::tiles[i].messaging->load())
                 {
-                    u32 offs = (j * ui::window_width) + bound_x_min;
-                    memcpy(backBuf + offs, camera::digital_colors + offs, tile_width * sizeof(u32));
+                    const u16 bound_y_min = static_cast<u16>(tracing::tracing_tile_positions[i].y());
+                    const u16 bound_y_max = static_cast<u16>(tracing::tracing_tile_bounds[i].y());
+                    const u16 bound_x_min = static_cast<u16>(tracing::tracing_tile_positions[i].x());
+                    const u16 tile_width = static_cast<u16>(tracing::tracing_tile_sizes[i].x());
+                    for (u16 j = bound_y_min; j < bound_y_max; j++)
+                    {
+                        u32 offs = (j * ui::window_width) + bound_x_min;
+                        memcpy(backBuf + offs, camera::digital_colors + offs, tile_width * sizeof(u32));
+                    }
+                    parallel::tiles[i].messaging->store(0);
                 }
-                parallel::tiles[i].messaging->store(0);
             }
+
+            if (dt < 30) present_interval++;
+            else present_interval--;
+            present_interval = vmath::umax(vmath::umin(present_interval, 0x00f00000), 2u);
         }
 
         // Break & output render performance when timed ray-tracing is active
@@ -95,9 +106,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
         if ((tracing::tile_prepass_completion->load() == parallel::numTiles) && !tracing_prepass_completed)
         {
-            double t = platform::osGetCurrentTimeSeconds();
-            platform::osDebugLogFmt("prepass/sky tracing completed within %f seconds \n", t - rt_t);
-            rt_t = t; // Update timestamp before profiling volume tracing
+            double t_trace_timer = platform::osGetCurrentTimeSeconds();
+            platform::osDebugLogFmt("prepass/sky tracing completed within %f seconds \n", t_trace_timer - rt_t);
+            rt_t = t_trace_timer; // Update timestamp before profiling volume tracing
             tracing_prepass_completed = true;
             //platform::osDebugBreak();
         }
@@ -110,6 +121,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             DispatchMessage(&msg);
             InvalidateRect(reinterpret_cast<HWND>(platform::osGetWindowHandle()), NULL, false);
         }
+
+        // Increment tick/time counters (used for render copy scheduling)
+        frontend_ticks++;
+
+        // + Update delta-time (also used for render copy scheduling)
+        const double curr_t = platform::osGetCurrentTimeMilliSeconds();
+        dt = curr_t - t;
+        t = curr_t;
     }
 
     // Clean-up, exit the program :)

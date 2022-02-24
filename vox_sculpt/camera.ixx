@@ -143,6 +143,128 @@ export namespace camera
                              (a << 24);
     }
 
+    // Reconstruct sparse image data; useful if we want to undersample for faster renders
+    // Current reconstruction uses bilinear interpolation, though other algorithms might be used in the future - the only
+    // requirement is that algorithms are separable and progressive, since we want to perform our reconstruction on the image
+    // data as its generated (to allow for immediate clean output, instead of pixellated output that suddenly cleans up after
+    // the last sample)
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    // Switches to change between reconstruction algorithms at preprocessing time
+#define RECONSTRUCT_BILINEAR
+//#define RECONSTRUCT_BILINEAR_SQUARE
+//#define RECONSTRUCT_NEAREST
+
+    // Reconstruction on the x-axis operates on individual pixel-strips at a time, so we recover samples
+    // on either side of the most recent stride before filling in the gaps between them
+    export void reconstruct_x(u32 x, u32 ndx, u32 stride)
+    {
+        // Resolve left sample components
+        const u32 l_sample = digital_colors[ndx - stride]; // No need to use the full map, since we know our blends will always be in the same pixel band
+        const float l_red = ((l_sample & 0x00ff0000) >> 16) / 255.0f;
+        const float l_green = ((l_sample & 0x0000ff00) >> 8) / 255.0f;
+        const float l_blue = (l_sample & 0x000000ff) / 255.0f;
+        const float l_alpha = ((l_sample & 0xff000000) >> 24) / 255.0f;
+
+        // Resolve right sample components
+        const u32 r_sample = digital_colors[ndx];
+        const float r_red = ((r_sample & 0x00ff0000) >> 16) / 255.0f;
+        const float r_green = ((r_sample & 0x0000ff00) >> 8) / 255.0f;
+        const float r_blue = (r_sample & 0x000000ff) / 255.0f;
+        const float r_alpha = ((r_sample & 0xff000000) >> 24) / 255.0f;
+
+        // Interpolate
+        i32 ndxori = ndx - stride; // Using the same trick as above, since we know our pixel band is constant
+        const i32 xori = x - stride;
+        for (i32 x2 = xori; x2 < x; x2++)
+        {
+            const float t = (x2 - xori) / stride;
+#ifdef RECONSTRUCT_BILINEAR
+            const u32 s_red = static_cast<u32>(vmath::lerp(l_red, r_red, t) * 255.5f);
+            const u32 s_green = static_cast<u32>(vmath::lerp(l_green, r_green, t) * 255.5f);
+            const u32 s_blue = static_cast<u32>(vmath::lerp(l_blue, r_blue, t) * 255.5f);
+            const u32 s_alpha = static_cast<u32>(vmath::lerp(l_alpha, r_alpha, t) * 255.5f);
+            const u32 s = s_blue |
+                         (s_green << 8) |
+                         (s_red << 16) |
+                         (s_alpha << 24);
+#else
+#ifdef RECONSTRUCT_BILINEAR_SQUARE
+            const u32 s_red = static_cast<u32>(vmath::lerp(l_red, r_red, t * t) * 255.5f);
+            const u32 s_green = static_cast<u32>(vmath::lerp(l_green, r_green, t * t) * 255.5f);
+            const u32 s_blue = static_cast<u32>(vmath::lerp(l_blue, r_blue, t * t) * 255.5f);
+            const u32 s_alpha = static_cast<u32>(vmath::lerp(l_alpha, r_alpha, t * t) * 255.5f);
+            const u32 s = s_blue |
+                         (s_green << 8) |
+                         (s_red << 16) |
+                         (s_alpha << 24);
+#else
+
+#ifdef RECONSTRUCT_NEAREST
+            const u32 s = (t <= 0.5f) ? l_sample : r_sample;
+#endif
+#endif
+#endif
+            camera::digital_colors[ndxori++] = s;
+        }
+    }
+
+    // Reconstruction on the y-axis runs over the entire width of the image, so we recover samples at either side
+    // of each column within the stridden area, then linearly interpolate those samples for each column
+    export void reconstruct_y(u32 y, u32 stride)
+    {
+        // Iterate from left to right
+        for (u32 sample_x = 0; sample_x < ui::window_width; sample_x++)
+        {
+            // Resolve upper sample components
+            const i32 yOri = y - stride;
+            const u32 upper_sample = digital_colors[yOri * ui::window_width + sample_x];
+            const float upper_red = ((upper_sample & 0x00ff0000) >> 16) / 255.0f;
+            const float upper_green = ((upper_sample & 0x0000ff00) >> 8) / 255.0f;
+            const float upper_blue = (upper_sample & 0x000000ff) / 255.0f;
+            const float upper_alpha = ((upper_sample & 0xff000000) >> 24) / 255.0f;
+
+            // Resolve lower sample components
+            const u32 lower_sample = digital_colors[y * ui::window_width + sample_x];
+            const float lower_red = ((lower_sample & 0x00ff0000) >> 16) / 255.0f;
+            const float lower_green = ((lower_sample & 0x0000ff00) >> 8) / 255.0f;
+            const float lower_blue = (lower_sample & 0x000000ff) / 255.0f;
+            const float lower_alpha = ((lower_sample & 0xff000000) >> 24) / 255.0f;
+
+            // Blend each column between the reconstructed rows at either side of the stride
+            for (u32 sample_y = yOri; sample_y < y; sample_y++)
+            {
+                const float t = (sample_y - yOri) / stride;
+#ifdef RECONSTRUCT_BILINEAR
+                const u32 s_red = static_cast<u32>(vmath::lerp(upper_red, lower_red, t) * 255.5f);
+                const u32 s_green = static_cast<u32>(vmath::lerp(upper_green, lower_green, t) * 255.5f);
+                const u32 s_blue = static_cast<u32>(vmath::lerp(upper_blue, lower_blue, t) * 255.5f);
+                const u32 s_alpha = static_cast<u32>(vmath::lerp(upper_alpha, lower_alpha, t) * 255.5f);
+                const u32 s = s_blue |
+                             (s_green << 8) |
+                             (s_red << 16) |
+                             (s_alpha << 24);
+#else
+#ifdef RECONSTRUCT_BILINEAR_SQUARE
+                const u32 s_red = static_cast<u32>(vmath::lerp(upper_red, lower_red, t) * 255.5f);
+                const u32 s_green = static_cast<u32>(vmath::lerp(upper_green, lower_green, t) * 255.5f);
+                const u32 s_blue = static_cast<u32>(vmath::lerp(upper_blue, lower_blue, t) * 255.5f);
+                const u32 s_alpha = static_cast<u32>(vmath::lerp(upper_alpha, lower_alpha, t) * 255.5f);
+                const u32 s = s_blue |
+                             (s_green << 8) |
+                             (s_red << 16) |
+                             (s_alpha << 24);
+#ifdef RECONSTRUCT_NEAREST
+                const u32 s = (t <= 0.5f) ? upper_sample : lower_sample;
+#endif
+#endif
+#endif
+                const u32 ndx = sample_y * ui::window_width + sample_x;
+                camera::digital_colors[ndx] = s; // Using the same trick as above, since we know our pixel band is constant
+            }
+        }
+    }
+
     // Initialize
     void init()
     {

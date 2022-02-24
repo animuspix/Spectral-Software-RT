@@ -54,6 +54,12 @@ namespace tracing
         tracing_tile_sizes[tileNdx].e[0] = tile_width;
         tracing_tile_sizes[tileNdx].e[1] = tile_height;
 
+        // Adjustable sensel stride for undersampling; helps with performance in debug renders
+        // Sensels skipped by sample stride are approximated using bilinear interpolation (see camera.ixx)
+        // Stride in practice is equal to the number of pixels skipped + 1 (so zero pixels is stride 1, one pixel is stride 2, etc)
+        // Thinking of modifying the flow to help with readability there
+        constexpr u8 stride = 3; // Eventually this will be driven by imgui
+
         // Local switches to shift between spreading threads over the window to shade the background vs focussing them
         // all on the volume
         bool bg_prepass = true;
@@ -61,9 +67,18 @@ namespace tracing
 
         // Tracing loop
         bool tile_sampling_finished = false;
-        while (draws_running->load() > 0)
+        bool draws_running_local = true;
+        bool samples_processed = false;
+        u32 tracing_thread_ticks = 0;
+        while (draws_running_local)
         {
-            if (parallel::tiles[tileNdx].messaging->load() == 0)
+            // Test running state at fixed intervals to reduce atomic calls
+            if (tracing_thread_ticks % 20 == 0)
+            {
+                draws_running_local = draws_running->load() > 0;
+                samples_processed = parallel::tiles[tileNdx].messaging->load() > 0;
+            }
+            if (!samples_processed)
             {
                 // Stop rendering when we've taken all the image samples we want
                 if (sample_ctr[tileNdx] <= aa::max_samples)
@@ -104,11 +119,17 @@ namespace tracing
 
                     // Starting another sample for every pixel in the current tile
                     sample_ctr[tileNdx]++;
-                    for (i32 y = minY; y < yMax; y++)
+                    i32 dy = stride;
+                    bool ylerp = true; // Interpolate stridden lines by default
+                    for (i32 y = minY; y < yMax; y += dy)
                     {
-                        for (i32 x = minX; x < xMax; x++)
+                        // Sample pixels in the current row
+                        i32 dx = stride;
+                        bool xlerp = true; // Interpolate stridden tiles by default
+                        for (i32 x = minX; x < xMax; x += dx)
                         {
                             // Core path integrator, + demo effects
+                            u32 pixel_ndx = y * ui::window_width + x;
 #define DEMO_SPECTRAL_PT
 //#define DEMO_FILM_RESPONSE
 //#define DEMO_XOR
@@ -119,27 +140,22 @@ namespace tracing
                             float distX = ((float)abs(abs(x - ui::image_centre_x) - ui::image_centre_x)) / (float)ui::image_centre_x;
                             float distY = ((float)abs(abs(y - ui::image_centre_y) - ui::image_centre_y)) / (float)ui::image_centre_y;
                             float dist = 1.0f - sqrt(distX * distX + distY * distY);
-                            u32 pixel_ndx = y * ui::window_width + x;
                             camera::sensor_response(dist, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
                             camera::tonemap_out(pixel_ndx);
 #elif defined(DEMO_AND)
                             float rho = (x & y) / (float)y;
-                            u32 pixel_ndx = y * ui::window_width + x;
                             camera::sensor_response(rho, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
                             camera::tonemap_out(pixel_ndx);
 #elif defined(DEMO_XOR)
                             float rho = ((x % 1024) ^ (y % 1024)) / 1024.0f;
-                            u32 pixel_ndx = y * ui::window_width + x;
                             camera::sensor_response(rho, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
                             camera::tonemap_out(pixel_ndx);
 #elif defined(DEMO_NOISE)
                             float sample[4];
                             parallel::rand_streams[tileNdx].next(sample); // Three wasted values :(
-                            u32 pixel_ndx = y * ui::window_width + x;
                             camera::sensor_response(sample[0], 1.0f, pixel_ndx, sample_ctr[tileNdx]);
                             camera::tonemap_out(pixel_ndx);
 #elif defined (DEMO_FILM_RESPONSE) // Rainbow gradient test
-                            u32 pixel_ndx = y * ui::window_width + x;
                             camera::sensor_response((float)x / (float)ui::window_width, 1.0f / aa::max_samples, 1.0f, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
                             camera::tonemap_out(pixel_ndx);
 #elif defined (DEMO_SPECTRAL_PT)
@@ -147,7 +163,6 @@ namespace tracing
                             parallel::rand_streams[tileNdx].next(sample); // Random spectral sample, should use QMC here
 
                             // Intersect the scene/the background
-                            u32 pixel_ndx = y * ui::window_width + x;
                             float rho, pdf, rho_weight, power;
                             const path_vt cam_vt = camera::lens_sample((float)x, (float)y, sample[0], sample[1], sample[2]);
                             if (!bg_prepass) // If not shading the background, scatter light through the scene
@@ -185,6 +200,25 @@ namespace tracing
                             // Map resolved sensor responses back into tonemapped RGB values we can store for output
                             camera::tonemap_out(pixel_ndx);
 #endif
+                            // Blend stridden pixels after each tap (x-component)
+                            if (x > minX && stride > 1 && xlerp) camera::reconstruct_x(x, pixel_ndx, stride);
+
+                            // Modify d-x to avoid skipping the final column in each tile
+                            if ((xMax - x) <= stride)
+                            {
+                                dx = 1;
+                                xlerp = false; // Switch interpolation off if we've stopped striding between pixels
+                            }
+                        }
+
+                        // Blend stridden pixels after each tap (y-component)
+                        if (y > minY && stride > 1 && ylerp) camera::reconstruct_y(y, stride);
+
+                        // Modify d-y to avoid skipping the final row in each tile
+                        if ((yMax - y) <= stride)
+                        {
+                            dy = 1;
+                            ylerp = false; // Switch interpolation off if we've stopped striding between lines
                         }
                     }
                 }
@@ -215,7 +249,9 @@ namespace tracing
 
                 // Signal a completed sampling iteration
                 parallel::tiles[tileNdx].messaging->inc();
+                samples_processed = true;
             }
+            tracing_thread_ticks++;
         }
     }
     export void stop_tracing()

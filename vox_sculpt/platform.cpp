@@ -391,7 +391,7 @@ u64 platform::osGetCurrentTimeNanoSeconds()
 
 double platform::osGetCurrentTimeMilliSeconds()
 {
-    return static_cast<double>(osGetCurrentTimeNanoSeconds()) * 1e-3;
+    return static_cast<double>(osGetCurrentTimeNanoSeconds()) * 1e-6;
 }
 
 double platform::osGetCurrentTimeSeconds()

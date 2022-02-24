@@ -629,8 +629,7 @@ export namespace vmath
     }
 
     template<maths_type lerp_type>
-    lerp_type lerp(lerp_type a, lerp_type b, lerp_type t) // Decays to regular lerp for single-dimension lerp_type, or multidimensional with equal t_x,t_y,t_z
-                                                          // Because I keep forgetting how these work: https://en.wikipedia.org/wiki/Linear_interpolation
+    lerp_type lerp(lerp_type a, lerp_type b, lerp_type t) // Because I keep forgetting how these work: https://en.wikipedia.org/wiki/Linear_interpolation
     {
         return a + t * (a - b);
     }
