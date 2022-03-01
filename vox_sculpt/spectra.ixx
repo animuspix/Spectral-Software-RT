@@ -1,4 +1,5 @@
 export module spectra;
+import vox_ints;
 import vmath;
 
 export namespace spectra
@@ -33,4 +34,43 @@ export namespace spectra
     {
         return vmath::gaussian(coords_and_rho.w(), 2.7f, 0.8f, 0.2f, 1.7f); // Debug red :p
     }
+
+    // Stratified spectral representation for camera sampling
+    export struct spectral_buckets
+    {
+        static constexpr u32 num_buckets = 16;
+        static constexpr float interval_size = 1.0f / num_buckets;
+        u32 last_bucket = 0;
+        float buckets[num_buckets] = {};
+        void init()
+        {
+            // Random bucket selection by default
+            for (u32 i = 0; i < num_buckets; i++)
+            {
+                buckets[i] = 0.0f;
+            }
+        }
+        float draw_sample(float u, float v)
+        {
+            // Try to select a frequency from a curve skewed towards colors reflected most by the environment
+            // This should work for most scenes
+            for (u32 n = 0; n < num_buckets; n++)
+            {
+                if (u < buckets[n]) // Buckets with higher sensitivities will naturally pass this test more often over time
+                {
+                    last_bucket = n; // Record the selected bucket so we can update it with a weight after tracing
+                    return (n * interval_size) + (v * interval_size); // Return a random offset within the selected bucket
+                }
+            }
+
+            // The surface is matte black; all frequencies reflected equally poorly
+            // Since no frequencies are particularly bright, just return one at random
+            last_bucket = vmath::ffloor(u * num_buckets);
+            return (last_bucket * interval_size) + (v * interval_size);
+        }
+        void update(float weight, u32 max_aa_samples)
+        {
+            buckets[last_bucket] += weight / max_aa_samples;
+        }
+    };
 };

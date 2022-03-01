@@ -34,6 +34,9 @@ namespace tracing
     export platform::threads::osAtomicInt* tile_prepass_completion;
     platform::threads::osAtomicInt* draws_running;
 
+    // Stratified spectra per-pixel, allowing us to bias color samples towards the scene SPD instead of drawing randomly for every tap
+    spectra::spectral_buckets* spectral_strata = nullptr;
+
     export void trace(u16 tilesX, u16 tilesY, u16 tileNdx)
     {
         // Locally cache tile coordinates & extents
@@ -58,7 +61,7 @@ namespace tracing
         // Sensels skipped by sample stride are approximated using bilinear interpolation (see camera.ixx)
         // Stride in practice is equal to the number of pixels skipped + 1 (so zero pixels is stride 1, one pixel is stride 2, etc)
         // Thinking of modifying the flow to help with readability there
-        constexpr u8 stride = 3; // Eventually this will be driven by imgui
+        constexpr u8 stride = 1; // Eventually this will be driven by imgui
 
         // Local switches to shift between spreading threads over the window to shade the background vs focussing them
         // all on the volume
@@ -70,13 +73,36 @@ namespace tracing
         bool draws_running_local = true;
         bool samples_processed = false;
         u32 tracing_thread_ticks = 0;
+        u32 sample_interval = 20; // Arbitrary initial value
+        double tick_timepoint = 0;
+        double sample_timings = 0;
+        bool tile_resolved = false;
         while (draws_running_local)
         {
+            // Avoid processing tiles once all samples have resolved
+            if (tile_resolved) continue;
+
             // Test running state at fixed intervals to reduce atomic calls
-            if (tracing_thread_ticks % 20 == 0)
+            if (tracing_thread_ticks % sample_interval == 0)
             {
                 draws_running_local = draws_running->load() > 0;
                 samples_processed = parallel::tiles[tileNdx].messaging->load() > 0;
+                double ms = platform::osGetCurrentTimeMilliSeconds();
+                sample_timings = ms - tick_timepoint;
+                tick_timepoint = ms;
+
+                // Fit the sampling interval to the time taken per-tick, targeting 30ms/30fps
+                if (sample_timings < 30) sample_interval++;
+                else sample_interval--;
+                sample_interval = vmath::umax(sample_interval, 2u); // Because our sampling interval isn't exclusively affected by the number of ticks we use -
+                                                                    // we still need to compute the samples themselves. We can't guarantee that the sampling process
+                                                                    // will always take under 30ms, and if we ignore it then our sample interval is likely to underflow
+                                                                    // (since it could decrement an infinite number of times)
+                                                                    // So we give ourselves at least two ticks after finalizing each sample, and if we're lucky enough
+                                                                    // to need more we can have them :D
+
+                // Set a max value for our sample intervals as well, to prevent them spiralling off and overflowing that way
+                sample_interval = vmath::umin(sample_interval, 0x00f00000);
             }
             if (!samples_processed)
             {
@@ -159,12 +185,16 @@ namespace tracing
                             camera::sensor_response((float)x / (float)ui::window_width, 1.0f / aa::max_samples, 1.0f, 1.0f, pixel_ndx, sample_ctr[tileNdx]);
                             camera::tonemap_out(pixel_ndx);
 #elif defined (DEMO_SPECTRAL_PT)
+                            // Draw random values for lens sampling
                             float sample[4];
-                            parallel::rand_streams[tileNdx].next(sample); // Random spectral sample, should use QMC here
+                            parallel::rand_streams[tileNdx].next(sample);
+
+                            // Resolve a fotted spectral sample for the current pixel
+                            float s = spectral_strata[pixel_ndx].draw_sample(sample[0], sample[1]);
 
                             // Intersect the scene/the background
                             float rho, pdf, rho_weight, power;
-                            const path_vt cam_vt = camera::lens_sample((float)x, (float)y, sample[0], sample[1], sample[2]);
+                            const path_vt cam_vt = camera::lens_sample((float)x, (float)y, sample[2], sample[3], s);
                             if (!bg_prepass) // If not shading the background, scatter light through the scene
                             {
                                 scene::isect(cam_vt,
@@ -199,6 +229,9 @@ namespace tracing
 
                             // Map resolved sensor responses back into tonemapped RGB values we can store for output
                             camera::tonemap_out(pixel_ndx);
+
+                            // Update weight for the bucket containing the current spectral sample
+                            spectral_strata[pixel_ndx].update(rho_weight, aa::max_samples);
 #endif
                             // Blend stridden pixels after each tap (x-component)
                             if (x > minX && stride > 1 && xlerp) camera::reconstruct_x(x, pixel_ndx, stride);
@@ -246,10 +279,15 @@ namespace tracing
                         bg_prepass = false;
                     }
                 }
+                else
+                {
+                    tile_resolved = true;
+                }
 
                 // Signal a completed sampling iteration
-                parallel::tiles[tileNdx].messaging->inc();
+                parallel::tiles[tileNdx].messaging->store(1);
                 samples_processed = true;
+                tick_timepoint = platform::osGetCurrentTimeMilliSeconds();
             }
             tracing_thread_ticks++;
         }
@@ -267,6 +305,13 @@ namespace tracing
         tracing_tile_bounds = mem::allocate_tracing<vmath::vec<2>>(sizeof(vmath::vec<2>) * parallel::numTiles);
         tracing_tile_sizes = mem::allocate_tracing<vmath::vec<2>>(sizeof(vmath::vec<2>) * parallel::numTiles);
         isosurf_distances = (float*)mem::allocate_tracing<float>(sizeof(float) * ui::window_area); // Eventually this will be per-subpixel instead of per-macropixel
+
+        // Allocate & initialize spectral strata
+        spectral_strata = mem::allocate_tracing<spectra::spectral_buckets>(sizeof(spectra::spectral_buckets) * ui::window_area);
+        for (u32 i = 0; i < ui::window_area; i++)
+        {
+            spectral_strata[i].init(); // Reserve zero distance for voxels directly facing a grid boundary
+        }
 
         // Resolve tracing types
         platform::osClearMem(cameraPaths, sizeof(path) * parallel::numTiles);
