@@ -68,9 +68,12 @@ export namespace spectra
             last_bucket = vmath::ffloor(u * num_buckets);
             return (last_bucket * interval_size) + (v * interval_size);
         }
-        void update(float weight, u32 max_aa_samples)
+        void update(float weight)
         {
-            buckets[last_bucket] += weight / max_aa_samples;
+            buckets[last_bucket] = weight; // Any noise from using per-sample weights seems to be cancelled out during filtering, and
+                                           // naively smoothing here (e.g. by using a weight / num_samples box filter) seems to damage the
+                                           // importance function (by skewing weights down) more than it helps account for natural spectral
+                                           // variance
         }
     };
 };

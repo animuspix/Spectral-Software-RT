@@ -231,7 +231,7 @@ namespace tracing
                             camera::tonemap_out(pixel_ndx);
 
                             // Update weight for the bucket containing the current spectral sample
-                            spectral_strata[pixel_ndx].update(rho_weight, aa::max_samples);
+                            spectral_strata[pixel_ndx].update(rho_weight);
 #endif
                             // Blend stridden pixels after each tap (x-component)
                             if (x > minX && stride > 1 && xlerp) camera::reconstruct_x(x, pixel_ndx, stride);
