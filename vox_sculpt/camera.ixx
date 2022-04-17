@@ -8,6 +8,7 @@ import scene;
 import spectra;
 import vox_ints;
 import aa;
+import platform;
 
 // Digital color/sensor data model, used to map from spectral inputs to writable screen colors
 // (slowly turning into a retinal cone cell model instead oops, might update names eventually)
@@ -58,6 +59,7 @@ export namespace camera
 
         // Return weighted lens direction :D
         const vmath::vec<3> c = camera_pos();
+        // Account for camera rotation here...
         return tracing::path_vt(vmath::vec<3>(film_xy.x() - ui::image_centre_x * aa::samples_x,
                                               film_xy.y() - ui::image_centre_y * aa::samples_y,
                                               camera_z_axis()).normalized(), // Probably don't need to normalize here, but the stability feels nice
@@ -176,9 +178,10 @@ export namespace camera
         // Interpolate
         i32 ndxori = ndx - stride; // Using the same trick as above, since we know our pixel band is constant
         const i32 xori = x - stride;
-        for (i32 x2 = xori; x2 < x; x2++)
+        i32 x_i = static_cast<i32>(x);
+        for (i32 x2 = xori; x2 < x_i; x2++)
         {
-            const float t = (x2 - xori) / stride;
+            const float t = static_cast<float>((x2 - xori) / stride);
 #ifdef RECONSTRUCT_BILINEAR
             const u32 s_red = static_cast<u32>(vmath::lerp(l_red, r_red, t) * 255.5f);
             const u32 s_green = static_cast<u32>(vmath::lerp(l_green, r_green, t) * 255.5f);
@@ -234,7 +237,7 @@ export namespace camera
             // Blend each column between the reconstructed rows at either side of the stride
             for (u32 sample_y = yOri; sample_y < y; sample_y++)
             {
-                const float t = (sample_y - yOri) / stride;
+                const float t = static_cast<float>((sample_y - yOri) / stride);
 #ifdef RECONSTRUCT_BILINEAR
                 const u32 s_red = static_cast<u32>(vmath::lerp(upper_red, lower_red, t) * 255.5f);
                 const u32 s_green = static_cast<u32>(vmath::lerp(upper_green, lower_green, t) * 255.5f);
@@ -262,6 +265,16 @@ export namespace camera
                 const u32 ndx = sample_y * ui::window_width + sample_x;
                 camera::digital_colors[ndx] = s; // Using the same trick as above, since we know our pixel band is constant
             }
+        }
+    }
+
+    void clear_patch(u32 xmin, u32 xmax, u32 ymin, u32 ymax)
+    {
+        u32 w = xmax - xmin;
+        for (u32 y = ymin; y < ymax; y++)
+        {
+            const u32 ndx = y * ui::window_width + xmin;
+            platform::osClearMem(camera::digital_colors + ndx, sizeof(u32) * w);
         }
     }
 

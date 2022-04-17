@@ -170,9 +170,10 @@ namespace geometry
         template<u32 w, u32 a>
         static u32 flatten_ndx(vmath::vec<3> uvw)
         {
-            return uvw.x() +
-                   (uvw.y() * w) +
-                   (uvw.z() * a);
+            float res = uvw.x() +
+                        (uvw.y() * w) +
+                        (uvw.z() * a);
+            return static_cast<u32>(res);
         }
 
         // Helper enum & functions to quickly parse chunk/cell data for intersection tests + cell updates
@@ -271,13 +272,13 @@ namespace geometry
 
         // Scale z-slices into metachunk space
         u32 metachunk_ctr = init_z * vol::num_metachunks_xy;
-        u32 metachunk_ndx_min = vol::flatten_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(vmath::vec<3>(0, 0, init_z));
+        u32 metachunk_ndx_min = vol::flatten_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(vmath::vec<3>(0.0f, 0.0f, static_cast<float>(init_z)));
         u32 metachunk_ndx_max = vol::flatten_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(vmath::vec<3>(vol::num_metachunks_x - 1,
                                                                                                               vol::num_metachunks_y - 1,
-                                                                                                              max_z));
+                                                                                                              static_cast<float>(max_z)));
 
         // Set-up slices
-//#define TEST_NOISE_CUBE
+#define TEST_NOISE_CUBE
 //#define TEST_SOLID_CUBE
 //#define TEST_SOLID_SPHERE
 #if !defined(TEST_SOLID_CUBE) && !defined(TEST_SOLID_SPHERE)
@@ -418,20 +419,36 @@ namespace geometry
         boxMat.spectral_response = vmath::fn<4, const float>(spectra::placeholder_spd);
     }
 
+    export void spin(float xrot, float yrot, vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
+    {
+        vmath::vec<3> axes(vmath::fsin(xrot), vmath::fsin(yrot), 0.0f);
+        vmath::vec<4> q_xrot(axes.x(), 0.0f, 0.0f, vmath::fcos(xrot));
+        vmath::vec<4> q_yrot(0.0f, axes.y(), 0.0f, vmath::fcos(yrot));
+        vol::metadata->transf.orientation = q_xrot.qtn_rotation_concat(q_yrot).qtn_rotation_concat(vol::metadata->transf.orientation);
+    }
+
+    export void zoom(float z, vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
+    {
+        z = vmath::fmax(z + 1.0f, 0.0f); // Keep z above 0.0f
+                                         // (+ above 1.0f by default)
+        vol::metadata->transf.scale *= z;
+    }
+
     // Test the bounding geometry for the volume grid
     // Used to quickly mask out rays that immediately hit the sky or an external light source
     export bool test(vmath::vec<3> dir, vmath::vec<3>* ro_inout, geometry::vol::vol_nfo* vol_nfo_out)
     {
-        // Import object properties
-        const vmath::vec<3> extents = vol::metadata->transf.scale * 0.5f; // Extents from object origin
-        const vmath::vec<3> pos = vol::metadata->transf.pos;
-        const vmath::vec<4> orientation = vol::metadata->transf.orientation;
+        // Compute transformed ray position & direction
+        vmath::vec<3> pos = vol::metadata->transf.pos;
+        vmath::vec<3> ro = *ro_inout - pos;
+        vmath::vec<3> rd = dir.qtn_rotation_apply(vol::metadata->transf.orientation);
 
         // Intersection vmath adapted from
         // https://www.shadertoy.com/view/ltKyzm, itself adapted from the Scratchapixel tutorial here:
         // https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
 
         // Synthesize box boundaries
+        const vmath::vec<3> extents = vol::metadata->transf.scale * 0.5f; // Extents from object origin
         const vmath::vec<3> boundsMin = (pos - extents);
         const vmath::vec<3> boundsMax = (pos + extents);
 
@@ -440,8 +457,8 @@ namespace geometry
         // Should probably reread vmath for all this in general
         vmath::vec<3> plane_dists[2] =
         {
-            (boundsMin - *ro_inout) / dir,
-            (boundsMax - *ro_inout) / dir
+            boundsMin / dir,
+            boundsMax / dir
         };
 
         // Keep near distances in [0], far distances in [1]

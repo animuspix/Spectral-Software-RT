@@ -80,6 +80,31 @@ export namespace vmath
                           leftMuls.e[1] - rightMuls.e[1],
                           leftMuls.e[2] - rightMuls.e[2]);
         }
+
+        // Need to refresh my memory of how this math works...
+        vec<4> qtn_rotation_concat(vec<4> q)
+        {
+            static_assert(dim == 4, "Quaternionic vectors must have four axes");
+            //platform::osAssertion(q.sqr_magnitude() == 1.0f && sqr_magnitude() == 1.0f); // Rotation quaternions should have unit magnitude
+            vmath::vec<3> v = xyz();
+            vec<3> a = w() * q.xyz();
+            vec<3> b = q.w() * v;
+            vec<3> ortho = a.cross(b);
+            vec<3> u = a + b + ortho;
+            return vec<4>(u.x(), u.y(), u.z(),
+                          (w() * q.w()) - v.dot(q.xyz()));
+        }
+        vec<3> qtn_rotation_apply(vec<4> q)
+        {
+            static_assert(dim == 3, "This function is for applying quaternionic rotations to 3D vectors - 2D vectors can be rotated with regular sin/cos, and quaternion rotations can be concatenated using [qtn_rotation_concat] (see above)");
+            //platform::osAssertion(q.sqr_magnitude() == 1.0f); // Rotation quaternions should have unit magnitude
+            vec<4> p = vec<4>(x(), y(), z(), 0.0);
+            vec<4> qv = p.qtn_rotation_concat(q);
+            vec<4> q_inv = vec<4>(qv.x() * -1.0f,
+                                  qv.y() * -1.0f,
+                                  qv.z() * -1.0f, q.w());
+            return qv.qtn_rotation_concat(q_inv).xyz();
+        }
         const float sqr_magnitude() const
         {
             float acc = 0;

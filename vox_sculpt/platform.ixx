@@ -166,6 +166,20 @@ export namespace platform
         // Get the ID associated with the calling thread on the current platform
         u32 osGetThreadId();
     };
+    enum class VOX_SCULPT_KEYS
+    {
+        KEY_ESCAPE,
+        KEY_LEFT_ARROW,
+        KEY_RIGHT_ARROW,
+        KEY_UP_ARROW,
+        KEY_DOWN_ARROW,
+        KEY_RSHIFT,
+        KEY_RCTRL,
+        NUM_SUPPORTED_KEYS
+    };
+    void osKeyDown(VOX_SCULPT_KEYS keyID);
+    void osKeyUp(VOX_SCULPT_KEYS keyID);
+    bool osTestKey(VOX_SCULPT_KEYS key);
     bool osWindowSetup(void* hInstance, int nCmdShow, void* wndProcSig, wchar_t* wndClassName, wchar_t* wndTitle, u16 w, u16 h);
     void* osGetWindowBmi();
     u64 osGetWindowHandle();

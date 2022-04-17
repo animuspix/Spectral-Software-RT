@@ -423,3 +423,26 @@ void platform::osCpyMem(void* dst, void* src, u64 size)
 {
     memcpy(dst, src, size);
 }
+
+bool keys[(u32)platform::VOX_SCULPT_KEYS::NUM_SUPPORTED_KEYS] = { };
+void platform::osKeyDown(platform::VOX_SCULPT_KEYS keyID)
+{
+    // If keyID is >= NUM_SUPPORTED_KEYS, then either a bug happened or the current key should be added to VOX_SCULPT_KEYS
+    assert(keyID < platform::VOX_SCULPT_KEYS::NUM_SUPPORTED_KEYS);
+
+    // Toggle key state
+    keys[(u32)keyID] = true;
+}
+void platform::osKeyUp(platform::VOX_SCULPT_KEYS keyID)
+{
+    // If keyID is >= NUM_SUPPORTED_KEYS, then either a bug happened or the current key should be added to VOX_SCULPT_KEYS
+    assert(keyID < platform::VOX_SCULPT_KEYS::NUM_SUPPORTED_KEYS);
+
+    // Toggle key state
+    keys[(u32)keyID] = false;
+}
+
+bool platform::osTestKey(platform::VOX_SCULPT_KEYS key)
+{
+    return keys[(u32)key];
+}
