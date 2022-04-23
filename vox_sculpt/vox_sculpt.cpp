@@ -12,6 +12,7 @@ import tracing;
 import parallel;
 import geometry;
 import platform;
+import platform_gpu;
 import vox_ints;
 
 #define MAX_LOADSTRING 100
@@ -45,6 +46,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     tracing::init(); // Leave a gap between parallel initialization and the first system that needs access to our thread tiles,
                      // so we avoid trying to launch work before threads are ready
     geometry::init(camera::inverse_lens_sample);
+    platform_gpu::init();
 
     // Create the application window
     if (!ui::window_setup((void*)hInstance, nCmdShow, (void*)WndProc, szWindowClass, szTitle)) return FALSE;
@@ -86,7 +88,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                     for (u16 j = bound_y_min; j < bound_y_max; j++)
                     {
                         u32 offs = (j * ui::window_width) + bound_x_min;
-                        memcpy(backBuf + offs, camera::digital_colors + offs, tile_width * sizeof(u32));
+                        memcpy(backBuf + offs, camera::digital_colors + offs, tile_width * sizeof(u32)); // Vary copy source between gpu & cpu colors depending on render mode
+                                                                                                         // (cpu production/final renders, gpu previews)
                     }
                     parallel::tiles[i].messaging->store(0);
                 }
