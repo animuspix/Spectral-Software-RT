@@ -16,6 +16,9 @@
     <Filter Include="Modules">
       <UniqueIdentifier>{10c9bafe-0fc8-4dd1-94b4-b1b22679fbd4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\GPU Edit Mode">
+      <UniqueIdentifier>{5a6206db-b1c3-440f-96f0-a2f7e0500cf2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -91,6 +94,18 @@
     </ClCompile>
     <ClCompile Include="geometry.cpp">
       <Filter>Modules</Filter>
+    </ClCompile>
+    <ClCompile Include="platform_gpu.ixx">
+      <Filter>Modules\GPU Edit Mode</Filter>
+    </ClCompile>
+    <ClCompile Include="shader.ixx">
+      <Filter>Modules\GPU Edit Mode</Filter>
+    </ClCompile>
+    <ClCompile Include="gpu_buffer.ixx">
+      <Filter>Modules\GPU Edit Mode</Filter>
+    </ClCompile>
+    <ClCompile Include="gpu_texture.ixx">
+      <Filter>Modules\GPU Edit Mode</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
