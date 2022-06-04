@@ -275,6 +275,7 @@ export namespace camera
         {
             const u32 ndx = y * ui::window_width + xmin;
             platform::osClearMem(camera::digital_colors + ndx, sizeof(u32) * w);
+            platform::osClearMem(camera::sensor_grid + ndx, sizeof(sensel) * w);
         }
     }
 

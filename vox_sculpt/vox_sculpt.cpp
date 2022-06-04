@@ -13,6 +13,7 @@ import parallel;
 import geometry;
 import platform;
 import vox_ints;
+import updater;
 
 #define MAX_LOADSTRING 100
 
@@ -92,6 +93,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                 }
             }
 
+            // Process renderer changes
+            // (anything that might modify the view)
+            render_updates::process();
+
             if (dt < 30) present_interval++;
             else present_interval--;
             present_interval = vmath::umax(vmath::umin(present_interval, 0x00f00000), 2u);
@@ -114,7 +119,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
 #endif
 
-        // Present new colors on window wake/message
+        // Process window messages
         if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
         {
             TranslateMessage(&msg);

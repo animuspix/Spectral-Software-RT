@@ -419,7 +419,7 @@ namespace geometry
         boxMat.spectral_response = vmath::fn<4, const float>(spectra::placeholder_spd);
     }
 
-    export void spin(float xrot, float yrot, vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
+    export void spin(float xrot, float yrot)
     {
         vmath::vec<3> axes(vmath::fsin(xrot), vmath::fsin(yrot), 0.0f);
         vmath::vec<4> q_xrot(axes.x(), 0.0f, 0.0f, vmath::fcos(xrot));
@@ -427,7 +427,7 @@ namespace geometry
         vol::metadata->transf.orientation = q_xrot.qtn_rotation_concat(q_yrot).qtn_rotation_concat(vol::metadata->transf.orientation);
     }
 
-    export void zoom(float z, vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
+    export void zoom(float z)
     {
         z = vmath::fmax(z + 1.0f, 0.0f); // Keep z above 0.0f
                                          // (+ above 1.0f by default)

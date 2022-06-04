@@ -172,6 +172,7 @@
     <ClCompile Include="spectra.ixx" />
     <ClCompile Include="tracing.ixx" />
     <ClCompile Include="ui.ixx" />
+    <ClCompile Include="updater.ixx" />
     <ClCompile Include="vmath.cpp" />
     <ClCompile Include="vmath.ixx" />
     <ClCompile Include="vox_ints.ixx" />

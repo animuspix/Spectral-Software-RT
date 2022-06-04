@@ -92,6 +92,9 @@
     <ClCompile Include="geometry.cpp">
       <Filter>Modules</Filter>
     </ClCompile>
+    <ClCompile Include="updater.ixx">
+      <Filter>Modules</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="vox_sculpt.rc">
