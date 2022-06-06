@@ -252,7 +252,7 @@ namespace tracing
             if (views_resampling[tileNdx].load() > 0)
             {
                 clear_render_state(tileNdx, minX, xMax, minY, yMax);
-                views_resampling[tileNdx].dec();
+                views_resampling[tileNdx].store(0);
             }
 
             // Avoid processing tiles once all samples have resolved (final render modes only)

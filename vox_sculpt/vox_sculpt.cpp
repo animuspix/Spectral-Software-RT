@@ -185,31 +185,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         // See https://docs.microsoft.com/en-us/windows/win32/learnwin32/keyboard-input for windows platform input implementation
         // + https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes for windows key-codes
         case WM_KEYUP:
-            if (GetKeyState(VK_ESCAPE) & 0x8000)
+            if (!(GetKeyState(VK_ESCAPE) & 0x8000))
             {
                 platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_ESCAPE);
             }
-            else if (!(GetKeyState(VK_RSHIFT) & 0x8000))
+            if (!(GetKeyState(VK_RSHIFT) & 0x8000))
             {
                 platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_RSHIFT);
             }
-            else if (GetKeyState(VK_RCONTROL) & 0x8000)
+            if (!(GetKeyState(VK_RCONTROL) & 0x8000))
             {
                 platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_RCTRL);
             }
-            else if (GetKeyState(VK_LEFT) & 0x8000)
+            if (!(GetKeyState(VK_LEFT) & 0x8000))
             {
                 platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_LEFT_ARROW);
             }
-            else if (GetKeyState(VK_RIGHT) & 0x8000)
+            if (!(GetKeyState(VK_RIGHT) & 0x8000))
             {
                 platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_RIGHT_ARROW);
             }
-            else if (GetKeyState(VK_UP) & 0x8000)
+            if (!(GetKeyState(VK_UP) & 0x8000))
             {
                 platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_UP_ARROW);
             }
-            else if (GetKeyState(VK_DOWN) & 0x8000)
+            if (!(GetKeyState(VK_DOWN) & 0x8000))
             {
                 platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_DOWN_ARROW);
             }
@@ -223,27 +223,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 // Instant quit for now, eventually this will hook into UI and prompt a warning pop-up/save dialog
                 PostQuitMessage(0);
             }
-            else if (GetKeyState(VK_RSHIFT) & 0x8000)
+            if (GetKeyState(VK_RSHIFT) & 0x8000)
             {
                 platform::osKeyDown(platform::VOX_SCULPT_KEYS::KEY_RSHIFT);
             }
-            else if (GetKeyState(VK_RCONTROL) & 0x8000)
+            if (GetKeyState(VK_RCONTROL) & 0x8000)
             {
                 platform::osKeyDown(platform::VOX_SCULPT_KEYS::KEY_RCTRL);
             }
-            else if (GetKeyState(VK_LEFT) & 0x8000)
+            if (GetKeyState(VK_LEFT) & 0x8000)
             {
                 platform::osKeyDown(platform::VOX_SCULPT_KEYS::KEY_LEFT_ARROW);
             }
-            else if (GetKeyState(VK_RIGHT) & 0x8000)
+            if (GetKeyState(VK_RIGHT) & 0x8000)
             {
                 platform::osKeyDown(platform::VOX_SCULPT_KEYS::KEY_RIGHT_ARROW);
             }
-            else if (GetKeyState(VK_UP) & 0x8000)
+            if (GetKeyState(VK_UP) & 0x8000)
             {
                 platform::osKeyDown(platform::VOX_SCULPT_KEYS::KEY_UP_ARROW);
             }
-            else if (GetKeyState(VK_DOWN) & 0x8000)
+            if (GetKeyState(VK_DOWN) & 0x8000)
             {
                 platform::osKeyDown(platform::VOX_SCULPT_KEYS::KEY_DOWN_ARROW);
             }

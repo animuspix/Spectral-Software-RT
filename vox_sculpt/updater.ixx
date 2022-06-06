@@ -15,7 +15,7 @@ export namespace render_updates
 		float xrot = 0.0f, yrot = 0.0f; // X, Y rotation (euler angles, we don't support roll atm)
 		float z = 0.0f; // Zoom; delta locked at 0.1f (arbitrary)
 		const float spinSpd = 360.0f / 30.0f; // Delta-angle locked to 12 degrees (360 degrees in a second @ 30fps)
-		const float zSpd = 0.0001f;
+		const float zSpd = 0.01f;
 
 		// Volume updates
 		xrot = platform::osTestKey(platform::VOX_SCULPT_KEYS::KEY_UP_ARROW) ? spinSpd :
@@ -39,7 +39,7 @@ export namespace render_updates
 			const u32 n_tiles = parallel::numTiles;
 			for (u32 i = 0; i < n_tiles; i++)
 			{
-				tracing::views_resampling[i].inc();
+				tracing::views_resampling[i].store(1);
 			}
 		}
 	}
