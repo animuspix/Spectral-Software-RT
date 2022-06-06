@@ -3,6 +3,9 @@ export module updater;
 import platform;
 import geometry;
 import camera;
+import tracing;
+import parallel;
+import vox_ints;
 
 export namespace render_updates
 {
@@ -27,12 +30,17 @@ export namespace render_updates
 		// Convert zoom/orbit to object transforms (scale & rotation), then send them over to our volume
 		const bool spinning = xrot != 0.0f || yrot != 0.0f;
 		const bool zooming = z != 0.0f;
-		bool view_resampling = false;
 		if (zooming || spinning)
 		{
 			if (spinning) geometry::spin(xrot, yrot);
 			if (zooming) geometry::zoom(z);
-			view_resampling = true;
+
+			// Indicate transforms have changed, so we need to resample each render tile
+			const u32 n_tiles = parallel::numTiles;
+			for (u32 i = 0; i < n_tiles; i++)
+			{
+				tracing::views_resampling[i].inc();
+			}
 		}
 	}
 }

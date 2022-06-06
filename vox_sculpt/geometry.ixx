@@ -112,24 +112,35 @@ namespace geometry
         static metachunk* metachunks;
         static u32 chunk_index_solver(vmath::vec<3> uvw_floored) // Returns chunk index
         {
-            auto uvw_metachunk_space = vmath::vec<3>(uvw_floored.x() / metachunk::num_vox_x,
-                                                     uvw_floored.y() / metachunk::num_vox_y,
-                                                     uvw_floored.z() / metachunk::num_vox_z);
-            auto uvw_chunk_space = vmath::vfloor(vmath::vfrac(uvw_metachunk_space) *
-                                                 vmath::vec<3>(metachunk::res_x, metachunk::res_y, metachunk::res_x));
-            return static_cast<u32>(uvw_chunk_space.x() + // Local scanline offset
-                                   (uvw_chunk_space.y() * metachunk::res_x) + // Local slice offset
-                                   (uvw_chunk_space.z() * metachunk::res_xy)); // Volume offset;
+            // Scalarized logic to reduce vec<n> constructor calls
+            //////////////////////////////////////////////////////
+
+            // Resolve metachunk offsets
+            float metachunk_x = uvw_floored.x() / metachunk::num_vox_x;
+            float metachunk_y = uvw_floored.y() / metachunk::num_vox_y;
+            float metachunk_z = uvw_floored.z() / metachunk::num_vox_z;
+
+            // Resolve chunk offsets
+            float chunk_x = vmath::ffrac(metachunk_x) * metachunk::res_x;
+            float chunk_y = vmath::ffrac(metachunk_y) * metachunk::res_y;
+            float chunk_z = vmath::ffrac(metachunk_z) * metachunk::res_z;
+
+            // Compose returnable index
+            return static_cast<u32>(chunk_x + // Local scanline offset
+                                   (chunk_y * metachunk::res_x) + // Local slice offset
+                                   (chunk_z * metachunk::res_xy)); // Volume offset;
         }
         static u32 metachunk_index_solver(vmath::vec<3> uvw_floored) // Returns metachunk index
         {
-            auto uvw_metachunk_space = vmath::vec<3>(uvw_floored.x() / metachunk::num_vox_x,
-                                                     uvw_floored.y() / metachunk::num_vox_y,
-                                                     uvw_floored.z() / metachunk::num_vox_z);
-            uvw_metachunk_space = vmath::vfloor(uvw_metachunk_space);
-            return static_cast<u32>(uvw_metachunk_space.x() + // Local scanline offset
-                                   (uvw_metachunk_space.y() * num_metachunks_x) + // Local slice offset
-                                   (uvw_metachunk_space.z() * num_metachunks_xy)); // Volume offset;
+            // Scalarized logic to reduce vec<n> constructor calls
+            //////////////////////////////////////////////////////
+
+            const u32 metachunk_x = uvw_floored.x() / metachunk::num_vox_x;
+            const u32 metachunk_y = uvw_floored.y() / metachunk::num_vox_y;
+            const u32 metachunk_z = uvw_floored.z() / metachunk::num_vox_z;
+            return static_cast<u32>(metachunk_x + // Local scanline offset
+                                   (metachunk_y * num_metachunks_x) + // Local slice offset
+                                   (metachunk_z * num_metachunks_xy)); // Volume offset;
         }
         struct voxel_ndces
         {
@@ -408,7 +419,7 @@ namespace geometry
         // (position should probably be actually zeroed, there's no reason for users to modify it instead of moving the camera)
         vol::metadata->transf.pos = vmath::vec<3>(0.0f, 0.0f, 20.0f);
         vol::metadata->transf.orientation = vmath::vec<4>(0.0f, 0.0f, 0.0f, 1.0f);
-        vol::metadata->transf.scale = vmath::vec<3>(4, 4, 4); // Boring regular unit scale
+        vol::metadata->transf.scale = vmath::vec<3>(4, 4, 4);
         vol::resolveSSBounds(inverse_lens_sampler_fn);
 
         // Update material metadata; eventually this should be loaded from disk

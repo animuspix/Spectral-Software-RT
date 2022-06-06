@@ -233,7 +233,8 @@ void platform::threads::osInitWorker(platform::threads::osThread<platform::threa
 
 u32 platform::threads::osResolveAvailableBatchProcessors()
 {
-    return std::thread::hardware_concurrency();
+    // Try to leave at least two cores spare for background processing
+    return std::thread::hardware_concurrency() - 2;
 }
 
 void platform::threads::osAssignAndWakeBatchProcessors(thread_meta::tile_thrd_fn fn,

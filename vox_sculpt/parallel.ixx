@@ -42,6 +42,11 @@ export namespace parallel
             // threads than the hardware can run independantly,
             // causing some to timeslice
             numTilesY = numTiles / numTilesX;
+
+            // Num-tiles can diverge from the actual number of tiles in this case, due to rounding issues
+            // (we can't claim fractions of a core)
+            // Update num-tiles so it always matches numTilesX * numtilesY
+            numTiles = numTilesX * numTilesY;
         }
         else
         {

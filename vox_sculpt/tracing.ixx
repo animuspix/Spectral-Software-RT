@@ -30,9 +30,11 @@ namespace tracing
     export vmath::vec<2>* tracing_tile_positions = nullptr;
     export vmath::vec<2>* tracing_tile_bounds = nullptr;
     export vmath::vec<2>* tracing_tile_sizes = nullptr;
-    export platform::threads::osAtomicInt* completed_tiles;
-    export platform::threads::osAtomicInt* tile_prepass_completion;
-    platform::threads::osAtomicInt* draws_running;
+    export platform::threads::osAtomicInt* completed_tiles = nullptr;
+    export platform::threads::osAtomicInt* tile_prepass_completion = nullptr;
+    export platform::threads::osAtomicInt* views_resampling = nullptr; // Semaphores indicating whether each view needs to be refreshed to account for new information (e.g. different volume/camera transforms after input)
+    platform::threads::osAtomicInt* draws_running = nullptr;
+
 
     // Stratified spectra per-pixel, allowing us to bias color samples towards the scene SPD instead of drawing randomly for every tap
     spectra::spectral_buckets* spectral_strata = nullptr;
@@ -54,10 +56,8 @@ namespace tracing
 
     // Set the render mode to use in the next "frame"
     RENDER_MODES renderMode = RENDER_MODE_EDIT; // Edit mode by default
-    RENDER_MODES lastRenderMode = RENDER_MODE_EDIT;
     export void set_render_mode(RENDER_MODES mode)
     {
-        lastRenderMode = renderMode;
         renderMode = mode;
     }
 
@@ -66,11 +66,14 @@ namespace tracing
     {
         sample_ctr[tileNdx] = 0;
         camera::clear_patch(minX, xMax, minY, yMax);
-        platform::osClearMem(cameraPaths, sizeof(path) * parallel::numTiles);
-        for (i32 i = 0; i < ui::window_area; i++)
+        platform::osClearMem(cameraPaths + tileNdx, sizeof(path));
+        const u32 w = xMax - minX;
+        for (i32 y = minY; y < yMax; y++)
         {
-            *(isosurf_distances + i) = -1.0f;
-            spectral_strata[i].init();
+            const u32 yOffs = y * ui::window_width;
+            const u32 offs = minX + yOffs;
+            *(isosurf_distances + offs) = -1.0f;
+            platform::osClearMem(spectral_strata + offs, sizeof(spectra::spectral_buckets) * w);
         }
     }
 
@@ -82,12 +85,12 @@ namespace tracing
         // Starting another sample for every pixel in the current tile
         sample_ctr[tileNdx]++;
         i32 dy = stride;
-        bool ylerp = true; // Interpolate stridden lines by default
+
+        // Image resolution/path tracing
         for (i32 y = minY; y < yMax; y += dy)
         {
             // Sample pixels in the current row
             i32 dx = stride;
-            bool xlerp = true; // Interpolate stridden tiles by default
             for (i32 x = minX; x < xMax; x += dx)
             {
                 // Core path integrator, + demo effects
@@ -169,25 +172,35 @@ namespace tracing
                 // Update weight for the bucket containing the current spectral sample
                 spectral_strata[pixel_ndx].update(rho_weight);
 #endif
-                // Blend stridden pixels after each tap (x-component)
-                if (x > minX && stride > 1 && xlerp) camera::reconstruct_x(x, pixel_ndx, stride);
-
                 // Modify d-x to avoid skipping the final column in each tile
                 if ((xMax - x) <= stride)
                 {
                     dx = 1;
-                    xlerp = false; // Switch interpolation off if we've stopped striding between pixels
                 }
             }
-
-            // Blend stridden pixels after each tap (y-component)
-            if (y > minY && stride > 1 && ylerp) camera::reconstruct_y(y, stride);
 
             // Modify d-y to avoid skipping the final row in each tile
             if ((yMax - y) <= stride)
             {
                 dy = 1;
-                ylerp = false; // Switch interpolation off if we've stopped striding between lines
+            }
+        }
+
+        // Stridden pixel reconstruction
+        // Very suspicious of the maths here + inside the reconstruction functions; need do revisit & debug at some point
+        if (stride > 1)
+        {
+            for (i32 y = minY; y < yMax; y++)
+            {
+                for (i32 x = minX + stride; x < xMax; x += stride)
+                {
+                    u32 pixel_ndx = y * ui::window_width + x;
+                    camera::reconstruct_x(x, pixel_ndx, stride);
+                }
+                if (y >= (minY + stride) && (y % stride == 0))
+                {
+                    camera::reconstruct_y(y, stride, minX, xMax);
+                }
             }
         }
     }
@@ -216,7 +229,8 @@ namespace tracing
         // Sensels skipped by sample stride are approximated using bilinear interpolation (see camera.ixx)
         // Stride in practice is equal to the number of pixels skipped + 1 (so zero pixels is stride 1, one pixel is stride 2, etc)
         // Thinking of modifying the flow to help with readability there
-        constexpr u8 stride = 4; // Eventually this will be driven by imgui
+        constexpr u8 edit_stride = 4; // Eventually this will be driven by imgui
+        constexpr u8 final_stride = 1;
 
         // Local switches to shift between spreading threads over the window to shade the background vs focussing them
         // all on the volume
@@ -234,13 +248,11 @@ namespace tracing
         bool tile_resolved = false;
         while (draws_running_local)
         {
-            // Clear render state if the render-mode has recently changed
-            bool render_state_cleared = false; // Flag to avoid clearing render state twice in one frame, since its an expensive process
-            if (lastRenderMode != renderMode)
+            // Clear render state on scene update
+            if (views_resampling[tileNdx].load() > 0)
             {
                 clear_render_state(tileNdx, minX, xMax, minY, yMax);
-                render_state_cleared = true;
-                lastRenderMode = renderMode;
+                views_resampling[tileNdx].dec();
             }
 
             // Avoid processing tiles once all samples have resolved (final render modes only)
@@ -249,28 +261,9 @@ namespace tracing
                 if (tile_resolved) continue;
             }
 
-            // Test running state at fixed intervals to reduce atomic calls
-            if (tracing_thread_ticks % sample_interval == 0)
-            {
-                draws_running_local = draws_running->load() > 0;
-                samples_processed = parallel::tiles[tileNdx].messaging->load() > 0;
-                double ms = platform::osGetCurrentTimeMilliSeconds();
-                sample_timings = ms - tick_timepoint;
-                tick_timepoint = ms;
-
-                // Fit the sampling interval to the time taken per-tick, targeting 30ms/30fps
-                if (sample_timings < 30) sample_interval++;
-                else sample_interval--;
-                sample_interval = vmath::umax(sample_interval, 2u); // Because our sampling interval isn't exclusively affected by the number of ticks we use -
-                                                                    // we still need to compute the samples themselves. We can't guarantee that the sampling process
-                                                                    // will always take under 30ms, and if we ignore it then our sample interval is likely to underflow
-                                                                    // (since it could decrement an infinite number of times)
-                                                                    // So we give ourselves at least two ticks after finalizing each sample, and if we're lucky enough
-                                                                    // to need more we can have them :D
-
-                // Set a max value for our sample intervals as well, to prevent them spiralling off and overflowing that way
-                sample_interval = 1;//vmath::umin(sample_interval, 0x00f00000);
-            }
+            // Test running state before we get onto rendering
+            draws_running_local = draws_running->load() > 0;
+            samples_processed = parallel::tiles[tileNdx].messaging->load() > 0;
             if (!samples_processed)
             {
                 if (renderMode == RENDER_MODE_FINAL_PREVIEW || renderMode == RENDER_MODE_FINAL_TO_FILE)
@@ -314,7 +307,7 @@ namespace tracing
 
                         // Invoke our core image integrator
                         // (shared across render modes for ease of development)
-                        core_image_integrator(tileNdx, stride, minY, yMax, minX, xMax, bg_prepass);
+                        core_image_integrator(tileNdx, final_stride, minY, yMax, minX, xMax, bg_prepass);
                     }
                     else if (!tile_sampling_finished)
                     {
@@ -352,17 +345,8 @@ namespace tracing
                 }
                 else if (renderMode == RENDER_MODE_EDIT)
                 {
-                    // Reset render state
-                    if (!render_state_cleared)
-                    {
-                        clear_render_state(tileNdx, minX, xMax, minY, yMax);
-                    }
-
-                    // Subtle difference from final modes - edit mode requires taking all samples before passing images back to the window
-                    while (sample_ctr[tileNdx] < aa::max_samples)
-                    {
-                        core_image_integrator(tileNdx, stride, minY, yMax, minX, xMax, false); // No pre-passes in edit mode
-                    }
+                    // No pre-passes or other data marshalling (yet) - straight into image integration
+                    core_image_integrator(tileNdx, edit_stride, minY, yMax, minX, xMax, false); // No pre-passes in edit mode
 
                     // Signal a completed sampling iteration
                     parallel::tiles[tileNdx].messaging->store(1);
@@ -405,6 +389,13 @@ namespace tracing
         draws_running = mem::allocate_tracing<platform::threads::osAtomicInt>(sizeof(platform::threads::osAtomicInt));
         draws_running->init();
         draws_running->inc();
+
+        // Allocate & initialize view-resampling state
+        views_resampling = mem::allocate_tracing<platform::threads::osAtomicInt>(sizeof(platform::threads::osAtomicInt) * parallel::numTiles);
+        for (u32 i = 0; i < parallel::numTiles; i++)
+        {
+            views_resampling[i].init();
+        }
 
         // Allocate & initialize work completion state
         completed_tiles = mem::allocate_tracing<platform::threads::osAtomicInt>(sizeof(platform::threads::osAtomicInt));

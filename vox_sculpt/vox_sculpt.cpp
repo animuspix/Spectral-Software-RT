@@ -189,7 +189,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
                 platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_ESCAPE);
             }
-            else if (GetKeyState(VK_RSHIFT) & 0x8000)
+            else if (!(GetKeyState(VK_RSHIFT) & 0x8000))
             {
                 platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_RSHIFT);
             }

@@ -153,9 +153,9 @@ export namespace camera
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // Switches to change between reconstruction algorithms at preprocessing time
-#define RECONSTRUCT_BILINEAR
+//#define RECONSTRUCT_BILINEAR
 //#define RECONSTRUCT_BILINEAR_SQUARE
-//#define RECONSTRUCT_NEAREST
+#define RECONSTRUCT_NEAREST
 
     // Reconstruction on the x-axis operates on individual pixel-strips at a time, so we recover samples
     // on either side of the most recent stride before filling in the gaps between them
@@ -181,7 +181,7 @@ export namespace camera
         i32 x_i = static_cast<i32>(x);
         for (i32 x2 = xori; x2 < x_i; x2++)
         {
-            const float t = static_cast<float>((x2 - xori) / stride);
+            const float t = static_cast<float>((x2 - xori)) / stride;
 #ifdef RECONSTRUCT_BILINEAR
             const u32 s_red = static_cast<u32>(vmath::lerp(l_red, r_red, t) * 255.5f);
             const u32 s_green = static_cast<u32>(vmath::lerp(l_green, r_green, t) * 255.5f);
@@ -212,12 +212,11 @@ export namespace camera
         }
     }
 
-    // Reconstruction on the y-axis runs over the entire width of the image, so we recover samples at either side
-    // of each column within the stridden area, then linearly interpolate those samples for each column
-    export void reconstruct_y(u32 y, u32 stride)
+    // Y-component of regular two-pass reconstruction; blends together the rows generated
+    // by reconstructing the x-component (see above)
+    export void reconstruct_y(u32 y, u32 stride, u32 minX, u32 xMax)
     {
-        // Iterate from left to right
-        for (u32 sample_x = 0; sample_x < ui::window_width; sample_x++)
+        for (u32 sample_x = minX; sample_x < xMax; sample_x++)
         {
             // Resolve upper sample components
             const i32 yOri = y - stride;
@@ -237,7 +236,7 @@ export namespace camera
             // Blend each column between the reconstructed rows at either side of the stride
             for (u32 sample_y = yOri; sample_y < y; sample_y++)
             {
-                const float t = static_cast<float>((sample_y - yOri) / stride);
+                const float t = static_cast<float>((sample_y - yOri)) / stride;
 #ifdef RECONSTRUCT_BILINEAR
                 const u32 s_red = static_cast<u32>(vmath::lerp(upper_red, lower_red, t) * 255.5f);
                 const u32 s_green = static_cast<u32>(vmath::lerp(upper_green, lower_green, t) * 255.5f);
@@ -257,6 +256,7 @@ export namespace camera
                              (s_green << 8) |
                              (s_red << 16) |
                              (s_alpha << 24);
+#else
 #ifdef RECONSTRUCT_NEAREST
                 const u32 s = (t <= 0.5f) ? upper_sample : lower_sample;
 #endif

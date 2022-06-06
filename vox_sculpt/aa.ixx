@@ -22,7 +22,7 @@ export namespace aa
 		const vmath::vec<2> alph3 = vmath::vec<2>(0.01168f);
 
 		// Core Blackman-Harris filter function
-		vmath::vec<2> ratio = vmath::vec<2>((vmath::pi * sample_xy)) / float(max_samples - 1);
+		vmath::vec<2> ratio = vmath::vec<2>(vmath::pi * sample_xy) / float(max_samples - 1);
 		vmath::vec<2> filtv = alph0 - (alph1 * vmath::cos(2.0f * ratio)) +
 									  (alph2 * vmath::cos(4.0f * ratio)) -
 									  (alph3 * vmath::cos(6.0f * ratio));
