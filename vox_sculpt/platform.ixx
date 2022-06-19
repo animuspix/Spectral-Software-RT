@@ -173,8 +173,8 @@ export namespace platform
         KEY_RIGHT_ARROW,
         KEY_UP_ARROW,
         KEY_DOWN_ARROW,
-        KEY_RSHIFT,
-        KEY_RCTRL,
+        KEY_Z,
+        KEY_LCTRL,
         NUM_SUPPORTED_KEYS
     };
     void osKeyDown(VOX_SCULPT_KEYS keyID);

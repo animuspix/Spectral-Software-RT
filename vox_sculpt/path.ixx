@@ -42,7 +42,7 @@ export namespace tracing
                 float response = 1.0f;
                 float power = 1.0f;
                 *rho_out = vts[0].rho_sample;
-                for (uint32_t i = 0; i < size; i++)
+                for (u32 i = 0; i < size; i++)
                 {
                     auto& bounce = vts[i];
                     pdf *= bounce.pdf;
@@ -50,7 +50,7 @@ export namespace tracing
                     power *= bounce.power;
 
                     // Process angular energy loss between vertices (the last cos(theta) in the rendering equation)
-                    //if (i < (size - 1)) power *= vts[i].dir.dot(vts[i + 1].dir);
+                    if (i < (size - 1)) power *= vts[i].dir.dot(vts[i + 1].dir);
                 }
                 *pdf_out = pdf;
                 *response_out = response;

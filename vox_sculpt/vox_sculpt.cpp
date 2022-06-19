@@ -189,13 +189,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
                 platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_ESCAPE);
             }
-            if (!(GetKeyState(VK_RSHIFT) & 0x8000))
+            if (!(GetKeyState(0x5a) & 0x8000)) // 0x5a = Letter Z
             {
-                platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_RSHIFT);
+                platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_Z);
             }
-            if (!(GetKeyState(VK_RCONTROL) & 0x8000))
+            if (!(GetKeyState(VK_LCONTROL) & 0x8000))
             {
-                platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_RCTRL);
+                platform::osKeyUp(platform::VOX_SCULPT_KEYS::KEY_LCTRL);
             }
             if (!(GetKeyState(VK_LEFT) & 0x8000))
             {
@@ -223,13 +223,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 // Instant quit for now, eventually this will hook into UI and prompt a warning pop-up/save dialog
                 PostQuitMessage(0);
             }
-            if (GetKeyState(VK_RSHIFT) & 0x8000)
+            if (GetKeyState(0x5a) & 0x8000) // 0x5a = Letter Z
             {
-                platform::osKeyDown(platform::VOX_SCULPT_KEYS::KEY_RSHIFT);
+                platform::osKeyDown(platform::VOX_SCULPT_KEYS::KEY_Z);
             }
-            if (GetKeyState(VK_RCONTROL) & 0x8000)
+            if (GetKeyState(VK_LCONTROL) & 0x8000)
             {
-                platform::osKeyDown(platform::VOX_SCULPT_KEYS::KEY_RCTRL);
+                platform::osKeyDown(platform::VOX_SCULPT_KEYS::KEY_LCTRL);
             }
             if (GetKeyState(VK_LEFT) & 0x8000)
             {

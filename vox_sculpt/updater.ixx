@@ -7,6 +7,11 @@ import tracing;
 import parallel;
 import vox_ints;
 
+//#define UPDATER_DBG
+#ifdef UPDATER_DBG
+#pragma optimize("", off)
+#endif
+
 export namespace render_updates
 {
 	void process()
@@ -24,8 +29,8 @@ export namespace render_updates
 		yrot = platform::osTestKey(platform::VOX_SCULPT_KEYS::KEY_LEFT_ARROW) ? spinSpd :
 			platform::osTestKey(platform::VOX_SCULPT_KEYS::KEY_RIGHT_ARROW) ? -spinSpd : 0.0f;
 
-		z = platform::osTestKey(platform::VOX_SCULPT_KEYS::KEY_RSHIFT) ? zSpd :
-			platform::osTestKey(platform::VOX_SCULPT_KEYS::KEY_RCTRL) ? -zSpd : 0.0f;
+		z = platform::osTestKey(platform::VOX_SCULPT_KEYS::KEY_Z) ? zSpd :
+			platform::osTestKey(platform::VOX_SCULPT_KEYS::KEY_LCTRL) ? -zSpd : 0.0f;
 
 		// Convert zoom/orbit to object transforms (scale & rotation), then send them over to our volume
 		const bool spinning = xrot != 0.0f || yrot != 0.0f;
@@ -44,3 +49,7 @@ export namespace render_updates
 		}
 	}
 }
+
+#ifdef UPDATER_DBG
+#pragma optimize("", on)
+#endif

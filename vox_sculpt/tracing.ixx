@@ -159,7 +159,7 @@ namespace tracing
                     rho = cam_vt.rho_sample;
                     rho_weight = spectra::sky(cam_vt.rho_sample, cam_vt.dir.e[1]);
                     power = cam_vt.power * lights::sky_env(&pdf);
-                    //pdf = cam_vt.pdf;
+                    pdf = 1.0f; // No scene sampling and uniform sky (for now), so we assume 100% probability for all rays (=> all rays are equally likely)
                 }
 
                 // Compute sensor response + apply sample weight (composite of integration weight for spectral accumulation,
@@ -284,14 +284,22 @@ namespace tracing
                                 volume_tracing = true;
 
                                 // Compute quad width, height
-                                const u16 qWidth = static_cast<u16>(vmath::fabs(geometry::vol::metadata->transf.ss_v3.x() - geometry::vol::metadata->transf.ss_v0.x()));
-                                const u16 qHeight = static_cast<u16>(vmath::fabs(geometry::vol::metadata->transf.ss_v3.y() - geometry::vol::metadata->transf.ss_v0.y()));
+                                float qWidth = (vmath::fabs(geometry::vol::metadata->transf.ss_v3.x() - geometry::vol::metadata->transf.ss_v0.x()));
+                                float qHeight = (vmath::fabs(geometry::vol::metadata->transf.ss_v3.y() - geometry::vol::metadata->transf.ss_v0.y()));
+
+                                // Clip quad-width/height to screen area
+                                u16 quadWidth = static_cast<u16>(vmath::fmin(qWidth, ui::window_width));
+                                u16 quadHeight = static_cast<u16>(vmath::fmin(qHeight, ui::window_height));
+
+                                // Clip tile bounds to screen area
+                                float quadMinX = vmath::clamp(geometry::vol::metadata->transf.ss_v0.x(), 0.0f, static_cast<float>(ui::window_width));
+                                float quadMinY = vmath::clamp(geometry::vol::metadata->transf.ss_v0.y(), 0.0f, static_cast<float>(ui::window_height));
 
                                 // Update local tile offsets (x/y bounds, width, height)
-                                tile_width = (qWidth / tilesX);
-                                tile_height = (qHeight / tilesY);
-                                minX = static_cast<u16>(geometry::vol::metadata->transf.ss_v0.x() + ((tileNdx % tilesX) * tile_width));
-                                minY = static_cast<u16>(geometry::vol::metadata->transf.ss_v0.y() + ((tileNdx / tilesX) * tile_height));
+                                tile_width = (quadWidth / tilesX);
+                                tile_height = (quadHeight / tilesY);
+                                minX = static_cast<u16>(quadMinX + ((tileNdx % tilesX) * tile_width));
+                                minY = static_cast<u16>(quadMinY + ((tileNdx / tilesX) * tile_height));
                                 xMax = minX + tile_width;
                                 yMax = minY + tile_height;
 

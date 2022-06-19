@@ -123,7 +123,7 @@ export namespace vmath
             }
             return static_cast<float>(sqrt(acc));
         }
-        vec<dim> normalized()
+        vec<dim> normalized() const
         {
             float len = magnitude();
             vec<dim> d = *this;

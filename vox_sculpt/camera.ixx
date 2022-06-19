@@ -69,26 +69,48 @@ export namespace camera
     // Find the perspective-projected pixel coordinate passing through the given worldspace 3D coordinate
     export vmath::vec<2> inverse_lens_sample(vmath::vec<3> world_pos)
     {
-        // Outgoing perspective-projection reference
-        // vmath::vec<3>(film_xy.x() - ui::image_centre_x * aa::samples_x,
-        //               film_xy.y() - ui::image_centre_y * aa::samples_y,
-        //               camera_z_axis()).normalized();
+        // This algorithm traps world_pos within the projected camera vertices, and assumes a pinhole camera
+        // This works because rays within the projected lens stay within the distribution of our lens for the
+        // given FOV. Previous versions traced worldspace points back to their intersection with the camera's
+        // initial projection plane (at camera_z_axis()), which proeduced distortion since there was no
+        // guarantee the line between world points and camera pixels would be parallel with camera rays
+        // intersecting the same points (especially for very wide or very narrow FOV)
+        // Anither issue was that pixels never actually sit on the camera plane - they're created out there,
+        // then immediately normalizeed, which would be fine if the rays projected back from our worldspace
+        // points were coherent with the frustum, but as above, they could easily not be - so hidden points
+        // could still read as visible after stretching them to the camera plane, and then map onto invalid
+        // pixels when the gradient towards them is much lower/higher than the gradient of the nearest camera
+        // ray (causing the stretch to displace their x/y coordinates less than it would have otherwise)
+        /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        // Resolve direction to the given worldspace position
-        // (assumes a pinhole camera)
-        const vmath::vec<3> c = camera_pos();
-        vmath::vec<3> c_rel = c - world_pos;
-        const vmath::vec<3> world_dir = c_rel.normalized();
+        // Define each camera corner (normalized, giving a direction from the camera origin)
+        i32 samples_x = i32(aa::samples_x);
+        i32 samples_y = i32(aa::samples_y);
+        vmath::vec<3> corners[4] = { vmath::vec<3>(-ui::image_centre_x * samples_x, ui::image_centre_y * samples_y, camera_z_axis()).normalized(), // Upper-left
+                                     vmath::vec<3>(ui::image_centre_x * samples_x, ui::image_centre_y * samples_y, camera_z_axis()).normalized(), // Upper-right
+                                     vmath::vec<3>(-ui::image_centre_x * samples_x, -ui::image_centre_y * samples_y, camera_z_axis()).normalized(), // Lower-left
+                                     vmath::vec<3>(ui::image_centre_x * samples_x, -ui::image_centre_y * samples_y, camera_z_axis()).normalized() }; // Lower-right
 
-        // Reconstruct position where z matches the z-axis of my camera rays before normalization
-        const float dx = world_dir.x() / world_dir.z();
-        const float dy = world_dir.y() / world_dir.z();
-        const float z = camera_z_axis(); // (ui::window_width * aa::samples_x) / vmath::ftan(FOV_RADS * 0.5f)
-        world_pos = c + vmath::vec<3>(dx * z, dy * z, z);
+        // Extend corners out to the z-plane containing world_pos
+        for (u32 i = 0; i < 4; i++)
+        {
+            float dx = corners[i].x() / corners[i].z();
+            float dy = corners[i].y() / corners[i].z();
+            corners[i].e[0] = dx * world_pos.z();
+            corners[i].e[1] = dy * world_pos.z();
+            corners[i].e[2] = world_pos.z();
+        }
 
-        // Just mask off x and y? Not sure if that's enough to get valid pixel positions
-        return vmath::vec<2>((world_pos.x() / aa::samples_x) + ui::image_centre_x,
-                             (world_pos.y() / aa::samples_y) + ui::image_centre_y);
+        // Compute world_pos position relative to the lower-right corner of the projected lens
+        vmath::vec<3> rel_p0 = world_pos - corners[2];
+
+        // Normalize relative XY coordinates
+        vmath::vec<2> wh = vmath::vabs(corners[0].xy() - corners[3].xy());
+        vmath::vec<2> uv = rel_p0.xy() / wh;
+
+        // Return scaled coordinates
+        return vmath::vec<2>(uv.x() * ui::window_width,
+                             uv.y() * ui::window_height);
     }
 
     // Combination of a custom sensor response curve (see spectra.h) and a basic integration scheme
@@ -100,7 +122,7 @@ export namespace camera
     void sensor_response(float rho, float rho_weight, float pdf, float power, u32 ndx, u32 sample_num)
     {
         // Resolve responses per-channel
-        vmath::vec<3> rgb = spectra::film(rho) * rho_weight * pdf * power;
+        vmath::vec<3> rgb = spectra::film(rho) * rho_weight * (power / pdf);
 
         // Compose isolated colours into a sensor value, apply accumulated weights
         // (from path-tracing + spectral integration), write to sensor output :)
