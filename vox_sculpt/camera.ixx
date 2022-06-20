@@ -24,6 +24,10 @@ struct sensel
     {
         return sensel(r * rhs, g * rhs, b * rhs);
     }
+    sensel operator/(const float rhs) const
+    {
+        return sensel(r / rhs, g / rhs, b / rhs);
+    }
     float r;
     float g;
     float b;
@@ -39,20 +43,28 @@ export namespace camera
     u32* digital_colors;
     constexpr u32 digital_colors_footprint = ui::window_width * ui::window_height * sizeof(u32);
 
+    // Sum of the filter values used for each sample, per-sensor
+    // Needed for correct image integration when I'm using non-boxy filters, since those filters
+    // can integrate to more/less than 1 and (=> and lead to weird results unless you divide out
+    // the sum of the filter values each frame)
+    float* filter_sum_grid;
+    constexpr u32 filter_sum_grid_footprint = ui::window_width * ui::window_height * sizeof(float);
+
     // Camera sampling! just perspective projection for now :)
     constexpr float FOV_RADS = vmath::pi * 0.5f;
     const vmath::vec<3> camera_pos() { return vmath::vec<3>(0, 0, -10.0f); }
     const float camera_z_axis() { return (ui::window_width * aa::samples_x) / vmath::ftan(FOV_RADS * 0.5f); }
-    export tracing::path_vt lens_sample(float film_x, float film_y, float rand_u, float rand_v, float rho)
+    export tracing::path_vt lens_sample(u32 film_x, u32 film_y, float rand_u, float rand_v, float rho)
     {
         // Compute supersampled coordinates
-        vmath::vec<2> film_xy = aa::supersample(film_x, film_y);
+        vmath::vec<2> film_xy = aa::supersample(float(film_x), float(film_y));
 
         // Compute local sample coordinate
         const vmath::vec<2> subpx_xy = aa::jitter(rand_u, rand_v);
 
-        // Compute filter weight
+        // Compute filter weight, accumulate for the sampled sensor
         float filt = aa::blackman_harris_weight(subpx_xy);
+        filter_sum_grid[film_x + film_y * ui::window_width] += filt;
 
         // Apply sample offset into film offset
         film_xy += subpx_xy;
@@ -63,7 +75,7 @@ export namespace camera
         return tracing::path_vt(vmath::vec<3>(film_xy.x() - ui::image_centre_x * aa::samples_x,
                                               film_xy.y() - ui::image_centre_y * aa::samples_y,
                                               camera_z_axis()).normalized(), // Probably don't need to normalize here, but the stability feels nice
-                                              c, 1.0f / filt, rho, 1.0f);
+                                              c, 1.0f, rho, 1.0f, 1.0f * filt);
     }
 
     // Find the perspective-projected pixel coordinate passing through the given worldspace 3D coordinate
@@ -156,7 +168,7 @@ export namespace camera
             const float e = 0.14f;
             return (x * (a * x + b)) / (x * (c * x + d) + e);
         };
-        sensel sensor_v = sensor_grid[ndx];
+        sensel sensor_v = sensor_grid[ndx] / filter_sum_grid[ndx];
         const u32 r = static_cast<u32>(aces(vmath::clamp(sensor_v.r, 0.0f, 1.0f)) * 256);
         const u32 g = static_cast<u32>(aces(vmath::clamp(sensor_v.g, 0.0f, 1.0f)) * 256);
         const u32 b = static_cast<u32>(aces(vmath::clamp(sensor_v.b, 0.0f, 1.0f)) * 256);
@@ -296,8 +308,9 @@ export namespace camera
         for (u32 y = ymin; y < ymax; y++)
         {
             const u32 ndx = y * ui::window_width + xmin;
-            platform::osClearMem(camera::digital_colors + ndx, sizeof(u32) * w);
-            platform::osClearMem(camera::sensor_grid + ndx, sizeof(sensel) * w);
+            platform::osClearMem(digital_colors + ndx, sizeof(u32) * w);
+            platform::osClearMem(sensor_grid + ndx, sizeof(sensel) * w);
+            platform::osClearMem(filter_sum_grid + ndx, sizeof(float) * w);
         }
     }
 
@@ -307,5 +320,7 @@ export namespace camera
         //assert(mem::tracing_arena != nullptr);
         sensor_grid = mem::allocate_tracing<sensel>(sensor_grid_footprint);
         digital_colors = mem::allocate_tracing<u32>(digital_colors_footprint);
+        filter_sum_grid = mem::allocate_tracing<float>(filter_sum_grid_footprint);
+        platform::osClearMem(filter_sum_grid, filter_sum_grid_footprint);
     }
 }

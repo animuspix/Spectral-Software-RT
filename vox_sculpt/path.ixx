@@ -9,8 +9,8 @@ export namespace tracing
 {
     struct path_vt
     {
-        path_vt(vmath::vec<3> _dir, vmath::vec<3> _ori, float _pdf, float _rho, float _rho_weight) :
-            dir(_dir), ori(_ori), pdf(_pdf), rho_weight(_rho_weight), rho_sample(_rho) {}
+        path_vt(vmath::vec<3> _dir, vmath::vec<3> _ori, float _pdf, float _rho, float _rho_weight, float _power) :
+            dir(_dir), ori(_ori), pdf(_pdf), rho_weight(_rho_weight), rho_sample(_rho), power(_power) {}
         vmath::vec<3> dir;
         vmath::vec<3> ori;
         float pdf = 1.0f; // Perspective-projected lens probabilities initialize at 100%; there's a proof somewhere, but naively
