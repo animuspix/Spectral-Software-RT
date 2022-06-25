@@ -98,7 +98,7 @@ export namespace camera
         // vmath::vec<2> inverse_perspective_projection(vmath::vec<3> world_pos, float lens_right_x, float lens_upper_y, float lens_projective_z)
         i32 samples_x = i32(aa::samples_x);
         i32 samples_y = i32(aa::samples_y);
-        vmath::vec<2> uv = vmath::inverse_perspective_projection(world_pos, ui::image_centre_x * samples_x, ui::image_centre_y * samples_y, camera_z_axis());
+        vmath::vec<2> uv = vmath::inverse_perspective_projection(world_pos, float(ui::image_centre_x * samples_x), float(ui::image_centre_y * samples_y), camera_z_axis());
         return vmath::vec<2>(uv.x() * ui::window_width,
                              uv.y() * ui::window_height);
     }

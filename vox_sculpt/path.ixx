@@ -42,7 +42,7 @@ export namespace tracing
                 float response = 1.0f;
                 float power = 1.0f;
                 *rho_out = vts[0].rho_sample;
-                for (u32 i = 0; i < size; i++)
+                for (i32 i = 0; i < size; i++)
                 {
                     auto& bounce = vts[i];
                     pdf *= bounce.pdf;

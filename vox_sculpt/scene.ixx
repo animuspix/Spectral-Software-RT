@@ -19,7 +19,7 @@ import lights;
 export namespace scene
 {
     // Rasterized skybox, for fast sampling once we're using a physical atmosphere instead of approximations
-    spectra::skybox skybox;
+    spectra::spectral_skybox skybox;
 
     // Traverse the scene, pass path vertices back up to our pipeline so they can be integrated separately from scene traversal
     // (allowing for BDPT/VCM and other integration schemes besides regular unidirectional)

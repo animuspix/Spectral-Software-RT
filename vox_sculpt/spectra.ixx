@@ -40,7 +40,7 @@ export namespace spectra
         // (assumed to take scalar frequency samples and return scalar
         // responses, and to be a scalar function - all the variation in
         // response is due to variation in sampled spectrum)
-        float initUniformSPD(vmath::fn<0, float> sourceFn)
+        float initUniformSPD(vmath::fn<1, float> sourceFn)
         {
             float rho = 0;
             for (u32 i = 0; i < num_spd_samples; i++)
@@ -52,7 +52,7 @@ export namespace spectra
 
         // Initialise just one knot at a time from the SPD - useful for complex SPDs that might vary significantly over space
         // (in which case we'd use one RasterizedSPD for each projected texel, and fill each manually using this function)
-        float init_single_knot(float rho, float response) // Rho and Response assumed in 0...1
+        void init_single_knot(float rho, float response) // Rho and Response assumed in 0...1
         {
             knots[u32(rho * num_spd_samples)] = u8(response * 255.5f);
         }
@@ -90,12 +90,12 @@ export namespace spectra
         RasterizedSPD* tiled_skybox; // Top, left, right, back, bottom, front (packed contiguously)
         void init()
         {
-            tiled_skybox = mem::allocate_tracing<decltype(tiled_skybox)>(sizeof(tiled_skybox) * tile_area * 6); // Six cube faces, each face has fullscreen area
+            tiled_skybox = mem::allocate_tracing<spectra::RasterizedSPD>(sizeof(tiled_skybox) * tile_area * 6); // Six cube faces, each face has fullscreen area
             for (u32 j = 0; j < 6; j++) // For each face
             {
                 for (u32 i = 0; i < tile_area; i++) // For each texel
                 {
-                    for (u32 k = 0; k < RasterizedSPD::num_spd_sasmples; k++) // For each SPD sample
+                    for (u32 k = 0; k < RasterizedSPD::num_spd_samples; k++) // For each SPD sample
                     {
                         float rho = float(k) / float(RasterizedSPD::num_spd_samples);
                         tiled_skybox[(j * tile_area) + i].init_single_knot(rho, sky(rho, 0.5f)); // Clear blue everywhere, future versions can compute projected sphere positions
@@ -126,11 +126,11 @@ export namespace spectra
             // Need to rotate the projection to the proper tile first >.>
             // Doable by keeping the projection the same and rotating the worldspace texel (very @.@)
             // In that case we'd want to rotate the worldspace texel towards the front skybox plane
-            vmath::vec<2> uv = vmath::inverse_perspective_projection(worldspace_texel_p, tile_width / 2, tile_height / 2, atmos_radius);
+            vmath::vec<2> uv = vmath::inverse_perspective_projection(worldspace_texel_p, static_cast<float>(tile_width / 2), static_cast<float>(tile_height / 2), atmos_radius);
 
             // Sample ^_^
             // Hardcoded front tile atm
-            u32 ndx = ((uv.y() * tile_height) * tile_width) + (uv.x() * tile_width);
+            u32 ndx = ((u32(uv.y()) * tile_height) * tile_width) + (u32(uv.x()) * tile_width);
             return tiled_skybox[(5 * tile_area) + ndx].sample(rho);
         }
     };

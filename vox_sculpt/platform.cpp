@@ -372,7 +372,7 @@ void platform::osDebugLog(const char* str_const)
 
 void platform::osDebugLog(char* str, u32 len_printable)
 {
-    const u16 len = std::strlen(str) + 1; // sprintf skips the null terminator, so account for that here
+    const u16 len = static_cast<u16>(std::strlen(str)) + 1; // sprintf skips the null terminator, so account for that here
     assert(len_printable <= len); // Output limits cannot be higher than string lengths
     str[len_printable] = 0; // Add the missing null terminator back here
     OutputDebugStringA(str);

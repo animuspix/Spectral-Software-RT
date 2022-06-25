@@ -135,9 +135,9 @@ namespace geometry
             // Scalarized logic to reduce vec<n> constructor calls
             //////////////////////////////////////////////////////
 
-            const u32 metachunk_x = uvw_floored.x() / metachunk::num_vox_x;
-            const u32 metachunk_y = uvw_floored.y() / metachunk::num_vox_y;
-            const u32 metachunk_z = uvw_floored.z() / metachunk::num_vox_z;
+            const u32 metachunk_x = u32(uvw_floored.x() / metachunk::num_vox_x);
+            const u32 metachunk_y = u32(uvw_floored.y() / metachunk::num_vox_y);
+            const u32 metachunk_z = u32(uvw_floored.z() / metachunk::num_vox_z);
             return static_cast<u32>(metachunk_x + // Local scanline offset
                                    (metachunk_y * num_metachunks_x) + // Local slice offset
                                    (metachunk_z * num_metachunks_xy)); // Volume offset;

@@ -132,7 +132,7 @@ namespace tracing
 
                 // Intersect the scene/the background
                 float rho, pdf, rho_weight, power;
-                const path_vt cam_vt = camera::lens_sample((float)x, (float)y, sample[2], sample[3], s);
+                const path_vt cam_vt = camera::lens_sample(x, y, sample[2], sample[3], s);
                 if (!bg_prepass) // If not shading the background, scatter light through the scene
                 {
                     scene::isect(cam_vt,
