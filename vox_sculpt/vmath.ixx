@@ -629,6 +629,31 @@ export namespace vmath
                   basisX.cross(n));
     }
 
+    vmath::vec<2> inverse_perspective_projection(vmath::vec<3> world_pos, float lens_right_x, float lens_upper_y, float lens_projective_z)
+    {
+        vmath::vec<3> corners[4] = { vmath::vec<3>(-lens_right_x, lens_upper_y, lens_projective_z).normalized(), // Upper-left
+                                     vmath::vec<3>(lens_right_x, lens_upper_y, lens_projective_z).normalized(), // Upper-right
+                                     vmath::vec<3>(-lens_right_x, -lens_upper_y, lens_projective_z).normalized(), // Lower-left
+                                     vmath::vec<3>(lens_right_x, -lens_upper_y, lens_projective_z).normalized() }; // Lower-right
+
+        // Extend corners out to the z-plane containing world_pos
+        for (u32 i = 0; i < 4; i++)
+        {
+            float dx = corners[i].x() / corners[i].z();
+            float dy = corners[i].y() / corners[i].z();
+            corners[i].e[0] = dx * world_pos.z();
+            corners[i].e[1] = dy * world_pos.z();
+            corners[i].e[2] = world_pos.z();
+        }
+
+        // Compute world_pos position relative to the lower-right corner of the projected lens
+        vmath::vec<3> rel_p0 = world_pos - corners[2];
+
+        // Normalize relative XY coordinates & return
+        vmath::vec<2> wh = vmath::vabs(corners[0].xy() - corners[3].xy());
+        return rel_p0.xy() / wh;
+    }
+
     float ffloor(float f);
     vec<3> vfloor(vec<3> v)
     {
@@ -756,14 +781,20 @@ export namespace vmath
 
     // Higher-level function object/functor; not super fancy but better than std::function (spooky hidden heap allocations) and more readable than c-style function pointers
     template<int dim, maths_type ret>
+    requires (dim > 0) // I <3 concepts
     struct fn
     {
         private:
-            ret(*ptr)(vec<dim>);
+            using argType = std::conditional<dim == 1, float, vec<dim>>::type;
+            ret(*ptr)(argType);
         public:
             fn() : ptr(NULL) {};
             fn(decltype(ptr) fnPtr) : ptr(fnPtr) {}
-            ret invoke(vec<dim> param) // User-friendly calling interface
+            ret operator(argType param) // User-friendly calling interfaces
+            {
+                return ptr(param);
+            }
+            ret invoke(argType param)
             {
                 return ptr(param);
             }

@@ -18,8 +18,12 @@ import lights;
 #endif
 export namespace scene
 {
+    // Rasterized skybox, for fast sampling once we're using a physical atmosphere instead of approximations
+    spectra::skybox skybox;
+
     // Traverse the scene, pass path vertices back up to our pipeline so they can be integrated separately from scene traversal
     // (allowing for BDPT/VCM and other integration schemes besides regular unidirectional)
+    // As the code fills out this may eventually move into an [integrator] module
     void isect(tracing::path_vt init_vt, tracing::path* vertex_output, float* isosurf_dist, u32 tileNdx)
     {
         float horizon_dist = 1000.0f;
@@ -176,7 +180,7 @@ export namespace scene
                 out_vt.rho_sample = 0.8f;
                 out_vt.rho_weight = 1.0f;
 #else
-                out_vt.rho_weight = spectra::sky(out_vt.rho_sample, out_vt.dir.e[1]);
+                out_vt.rho_weight = (out_vt.rho_sample, out_vt.dir.e[1]);
                 out_vt.power *= lights::sky_env(&out_vt.pdf);
 #endif
 
@@ -195,6 +199,18 @@ export namespace scene
             // Update bounce counter (escaped rays still bounce exactly once off the sky)
             bounceCtr++;
         }
+    }
+
+    void init()
+    {
+        // Just initializes the skybox for now
+        // Future versions will initialize/resolve other scene settings (e.g. additional lights & atmospherics) here as well,
+        // and migrate the core path code to an [integrator] module
+        /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        // Initialize pre-computed atmosphere
+        // (does one pass of that precomputation immediately, we can do others later if we want)
+        skybox.init();
     }
 };
 #ifdef SCN_DBG

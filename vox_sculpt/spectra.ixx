@@ -1,19 +1,11 @@
 export module spectra;
 import vox_ints;
 import vmath;
+import mem;
+import platform;
 
 export namespace spectra
 {
-    // Super basic sky model - sharp blue fading to orange as y approaches zero
-    // Desmos visualization
-    // https://www.desmos.com/calculator/7qqnkr1uqx
-    float sky(float rho, float y)
-    {
-        const float blue = vmath::clamp(vmath::gaussian(rho, 0.25f, 0.18f, 0.1f, -0.75f), 0.0f, 1.0f);
-        const float orange = vmath::clamp(vmath::gaussian(rho, 0.25f, 0.7f, 0.1f, -0.75f), 0.0f, 1.0f);
-        return vmath::lerp(blue, orange, vmath::fabs(y));
-    }
-
     // Custom film/sensor response curve, kinda follows the references in Zucconi's diffraction tutorial but heavily iterated to give a more film-like
     // spectrum; Zucconi's tutorial is here
     // https://www.alanzucconi.com/2017/07/15/improving-the-rainbow/,
@@ -35,8 +27,116 @@ export namespace spectra
         return vmath::gaussian(coords_and_rho.w(), 2.7f, 0.8f, 0.2f, 1.7f); // Debug red :p
     }
 
+    // Compressed SPD representation for efficiently sampling (& creating) complex spectra
+    // Contains a piecewise curve rasterized to 16 points with 256 fixed-point values each
+    export struct RasterizedSPD
+    {
+        RasterizedSPD() { platform::osClearMem(knots, 16); }
+
+        static constexpr u32 num_spd_samples = 16;
+        u8 knots[num_spd_samples];
+
+        // Initialize an SPD from the given continuous distribution
+        // (assumed to take scalar frequency samples and return scalar
+        // responses, and to be a scalar function - all the variation in
+        // response is due to variation in sampled spectrum)
+        float initUniformSPD(vmath::fn<0, float> sourceFn)
+        {
+            float rho = 0;
+            for (u32 i = 0; i < num_spd_samples; i++)
+            {
+                knots[i] = u8(sourceFn(rho) * 255.5f);
+                rho += 1.0f / float(num_spd_samples);
+            }
+        }
+
+        // Initialise just one knot at a time from the SPD - useful for complex SPDs that might vary significantly over space
+        // (in which case we'd use one RasterizedSPD for each projected texel, and fill each manually using this function)
+        float init_single_knot(float rho, float response) // Rho and Response assumed in 0...1
+        {
+            knots[u32(rho * num_spd_samples)] = u8(response * 255.5f);
+        }
+
+        // Convert sampled spectrum to distribution indices, interpolate, return predicted response
+        float sample(float rho) // Rho assumed in 0...1
+        {
+            const float i = rho * num_spd_samples;
+            const float t = i - u32(i);
+            float a = float(knots[u32(i)]) / 255.5f;
+            float b = float(knots[vmath::umin(u32(i + 1), num_spd_samples - 1)]) / 255.5f;
+            return vmath::lerp(a, b, t);
+        }
+    };
+
+    // Super basic sky model - sharp blue fading to orange as y approaches zero
+    // Desmos visualization
+    // https://www.desmos.com/calculator/7qqnkr1uqx
+    // Eventually this will be updated to use a fancier spectral model, driven by the math here:
+    // https://www.scratchapixel.com/lessons/procedural-generation-virtual-worlds/simulating-sky
+    float sky(float rho, float y)
+    {
+        const float blue = vmath::clamp(vmath::gaussian(rho, 0.25f, 0.18f, 0.1f, -0.75f), 0.0f, 1.0f);
+        const float orange = vmath::clamp(vmath::gaussian(rho, 0.25f, 0.7f, 0.1f, -0.75f), 0.0f, 1.0f);
+        return vmath::lerp(blue, orange, vmath::fabs(y));
+    }
+
+    export struct spectral_skybox
+    {
+        static constexpr float atmos_radius = 1000.0f;
+        static constexpr float atmos_diameter = atmos_radius * 2.0f;
+        u32 tile_width = 1920; // Skybox tiles are constant 1080p
+        u32 tile_height = 1080;
+        u32 tile_area = tile_width * tile_height;
+        RasterizedSPD* tiled_skybox; // Top, left, right, back, bottom, front (packed contiguously)
+        void init()
+        {
+            tiled_skybox = mem::allocate_tracing<decltype(tiled_skybox)>(sizeof(tiled_skybox) * tile_area * 6); // Six cube faces, each face has fullscreen area
+            for (u32 j = 0; j < 6; j++) // For each face
+            {
+                for (u32 i = 0; i < tile_area; i++) // For each texel
+                {
+                    for (u32 k = 0; k < RasterizedSPD::num_spd_sasmples; k++) // For each SPD sample
+                    {
+                        float rho = float(k) / float(RasterizedSPD::num_spd_samples);
+                        tiled_skybox[(j * tile_area) + i].init_single_knot(rho, sky(rho, 0.5f)); // Clear blue everywhere, future versions can compute projected sphere positions
+                                                                                                   // for accurate sampling
+                    }
+                }
+            }
+        }
+
+        // Regenerate the skybox with altered sun position, atmospheric density, atmospheric radius, etc.
+        void regenerate()
+        {
+            // Does nothing for now...
+        }
+
+        // Needs to map the given ray origin/direction onto a skybox texel, find response for the given spectrum, and return
+        float sample(vmath::vec<3> ray_origin, vmath::vec<3> ray_direction, float rho)
+        {
+            // Assume ray origins are consistently close to the centre of the atmosphere
+            vmath::vec<3> worldspace_texel_p = ray_origin + ray_direction * atmos_radius;
+
+            // Compute the tile to sample here...
+            // Should be similar/equivalent to computing normals on a cube
+            // Quite tempting just to intersect planes one-by-one ^_^', but we shouldn't, this code will be called at least once for every camera sensor
+            ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+            // Convert to image space with an inverse perspective projection
+            // Need to rotate the projection to the proper tile first >.>
+            // Doable by keeping the projection the same and rotating the worldspace texel (very @.@)
+            // In that case we'd want to rotate the worldspace texel towards the front skybox plane
+            vmath::vec<2> uv = vmath::inverse_perspective_projection(worldspace_texel_p, tile_width / 2, tile_height / 2, atmos_radius);
+
+            // Sample ^_^
+            // Hardcoded front tile atm
+            u32 ndx = ((uv.y() * tile_height) * tile_width) + (uv.x() * tile_width);
+            return tiled_skybox[(5 * tile_area) + ndx].sample(rho);
+        }
+    };
+
     // Stratified spectral representation for camera sampling
-    export struct spectral_buckets
+    struct spectral_buckets
     {
         static constexpr u32 num_buckets = 16;
         static constexpr float interval_size = 1.0f / num_buckets;

@@ -1,11 +1,12 @@
 export module lights;
 
 import vmath;
+import spectra;
 
 export namespace lights
 {
-    constexpr float sky_dist = 1000.0f; // Sky is assumed to be ~1000 units away from everything in the scene
-    constexpr float sky_brightness = 250000000.0f; // Totally nonphysical number, adjusted experimentally
+    constexpr float sky_dist = spectra::spectral_skybox::atmos_radius; // The scene is assumed to be in ~the middle of the atmosphere
+    constexpr float sky_brightness = 250000.0f; // Totally nonphysical number, adjusted experimentally
     float sky_env(float* pdf_out) // Returns sky intensity from the given ray origin; doesn't perform a visibility test (yet), so not useful
                                   // for MIS/next-event-estimation
     {

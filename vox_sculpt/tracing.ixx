@@ -35,7 +35,6 @@ namespace tracing
     export platform::threads::osAtomicInt* views_resampling = nullptr; // Semaphores indicating whether each view needs to be refreshed to account for new information (e.g. different volume/camera transforms after input)
     platform::threads::osAtomicInt* draws_running = nullptr;
 
-
     // Stratified spectra per-pixel, allowing us to bias color samples towards the scene SPD instead of drawing randomly for every tap
     spectra::spectral_buckets* spectral_strata = nullptr;
 
@@ -157,7 +156,7 @@ namespace tracing
                 {
                     vmath::vec<3> ori = cam_vt.ori + (cam_vt.dir * lights::sky_dist);
                     rho = cam_vt.rho_sample;
-                    rho_weight = spectra::sky(cam_vt.rho_sample, cam_vt.dir.e[1]);
+                    rho_weight = scene::skybox.sample(cam_vt.ori, cam_vt.dir, cam_vt.rho_sample);
                     power = cam_vt.power * lights::sky_env(&pdf);
                     pdf = 1.0f; // No scene sampling and uniform sky (for now), so we assume 100% probability for all rays (=> all rays are equally likely)
                 }
@@ -410,6 +409,11 @@ namespace tracing
         completed_tiles->init();
         tile_prepass_completion = mem::allocate_tracing<platform::threads::osAtomicInt>(sizeof(platform::threads::osAtomicInt));
         tile_prepass_completion->init();
+
+        // Scene initialization
+        // Eventually this will move out of [tracing] and into [vox_sculpt], and we'll be initializing an integrator here instead
+        // (or not, it doesn't have any of its own data yet)
+        scene::init();
     }
 };
 

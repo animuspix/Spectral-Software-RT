@@ -95,32 +95,10 @@ export namespace camera
         // ray (causing the stretch to displace their x/y coordinates less than it would have otherwise)
         /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        // Define each camera corner (normalized, giving a direction from the camera origin)
+        // vmath::vec<2> inverse_perspective_projection(vmath::vec<3> world_pos, float lens_right_x, float lens_upper_y, float lens_projective_z)
         i32 samples_x = i32(aa::samples_x);
         i32 samples_y = i32(aa::samples_y);
-        vmath::vec<3> corners[4] = { vmath::vec<3>(-ui::image_centre_x * samples_x, ui::image_centre_y * samples_y, camera_z_axis()).normalized(), // Upper-left
-                                     vmath::vec<3>(ui::image_centre_x * samples_x, ui::image_centre_y * samples_y, camera_z_axis()).normalized(), // Upper-right
-                                     vmath::vec<3>(-ui::image_centre_x * samples_x, -ui::image_centre_y * samples_y, camera_z_axis()).normalized(), // Lower-left
-                                     vmath::vec<3>(ui::image_centre_x * samples_x, -ui::image_centre_y * samples_y, camera_z_axis()).normalized() }; // Lower-right
-
-        // Extend corners out to the z-plane containing world_pos
-        for (u32 i = 0; i < 4; i++)
-        {
-            float dx = corners[i].x() / corners[i].z();
-            float dy = corners[i].y() / corners[i].z();
-            corners[i].e[0] = dx * world_pos.z();
-            corners[i].e[1] = dy * world_pos.z();
-            corners[i].e[2] = world_pos.z();
-        }
-
-        // Compute world_pos position relative to the lower-right corner of the projected lens
-        vmath::vec<3> rel_p0 = world_pos - corners[2];
-
-        // Normalize relative XY coordinates
-        vmath::vec<2> wh = vmath::vabs(corners[0].xy() - corners[3].xy());
-        vmath::vec<2> uv = rel_p0.xy() / wh;
-
-        // Return scaled coordinates
+        vmath::vec<2> uv = vmath::inverse_perspective_projection(world_pos, ui::image_centre_x * samples_x, ui::image_centre_y * samples_y, camera_z_axis());
         return vmath::vec<2>(uv.x() * ui::window_width,
                              uv.y() * ui::window_height);
     }
