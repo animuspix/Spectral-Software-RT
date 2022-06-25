@@ -322,5 +322,6 @@ export namespace camera
         digital_colors = mem::allocate_tracing<u32>(digital_colors_footprint);
         filter_sum_grid = mem::allocate_tracing<float>(filter_sum_grid_footprint);
         platform::osClearMem(filter_sum_grid, filter_sum_grid_footprint);
+        aa::init_filter_weights();
     }
 }

@@ -585,6 +585,18 @@ export namespace vmath
     };
 
     float fexp(float f);
+    vmath::vec<2> vexp(vmath::vec<2> v)
+    {
+        return vmath::vec<2>(vmath::fexp(v.x()),
+                             vmath::fexp(v.y()));
+    }
+    vmath::vec<3> vexp(vmath::vec<3> v)
+    {
+        return vmath::vec<3>(vmath::fexp(v.x()),
+                             vmath::fexp(v.y()),
+                             vmath::fexp(v.z()));
+    }
+
     float gaussian(float x, float a, float b, float c, float d)
     {
         // Solve inner polynomial
@@ -643,6 +655,11 @@ export namespace vmath
         return vec<3>(ffrac(v.e[0]),
                       ffrac(v.e[1]),
                       ffrac(v.e[2]));
+    }
+    vec<2> vfrac(vec<2> v)
+    {
+        return vec<2>(ffrac(v.e[0]),
+                      ffrac(v.e[1]));
     }
 
     float fceil(float f);
