@@ -17,8 +17,14 @@ export namespace vmath
     constexpr float pi_2 = 2.0f * pi;
     constexpr float eps = 0.000001f;
 
+    // Constraint for supported vector element types
+    // No support for vectors of vectors (tensors?) yet - I'll add them once I need them
+    template<typename numeric_t>
+    concept vec_elt_type = std::is_floating_point_v<numeric_t> ||
+                           std::is_integral_v<numeric_t>;
+
     // Linear algebra classes
-    template<int dim> requires (dim < 5 && dim > 1)
+    template<int dim, vec_elt_type type = float> requires (dim < 5 && dim > 1)
     struct vec
     {
         vec<dim>()
@@ -57,7 +63,7 @@ export namespace vmath
             e[2] = _z;
             e[3] = _w;
         }
-        float e[dim] = {};
+        type e[dim] = {};
         float dot(vec<dim> u)
         {
             float ret = 0;
