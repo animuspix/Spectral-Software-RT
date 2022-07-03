@@ -55,7 +55,7 @@ namespace tracing
     };
 
     // Set the render mode to use in the next "frame"
-    RENDER_MODES renderMode = RENDER_MODE_EDIT; // Edit mode by default
+    RENDER_MODES renderMode = RENDER_MODE_FINAL_PREVIEW; // Edit mode by default
     export void set_render_mode(RENDER_MODES mode)
     {
         renderMode = mode;

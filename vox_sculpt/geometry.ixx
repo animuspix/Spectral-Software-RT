@@ -419,7 +419,7 @@ namespace geometry
         // (position should probably be actually zeroed, there's no reason for users to modify it instead of moving the camera)
         vol::metadata->transf.pos = vmath::vec<3>(0.0f, 0.0f, 20.0f);
         vol::metadata->transf.orientation = vmath::vec<4>(0.0f, 0.0f, 0.0f, 1.0f);
-        vol::metadata->transf.scale = vmath::vec<3>(4, 4, 4);
+        vol::metadata->transf.scale = vmath::vec<3>(8, 8, 8);
         vol::resolveSSBounds(inverse_lens_sampler_fn);
 
         // Update material metadata; eventually this should be loaded from disk
