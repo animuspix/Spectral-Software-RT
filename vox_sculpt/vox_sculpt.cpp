@@ -56,7 +56,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // Load window/desktop renderer
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_VOXSCULPT));
 
-#define TIMED_TRACING
+//#define TIMED_TRACING
 #ifdef TIMED_TRACING
     bool tracing_prepass_completed = false;
     double rt_t = platform::osGetCurrentTimeSeconds();
