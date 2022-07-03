@@ -52,7 +52,6 @@ export namespace scene
                 /////////////////////////////////////////////////////////
 
                 // Special case for silhouettes; if we've just hit the grid boundaries, jump to the surface instead of recalculating that distance every sample
-                vmath::vec<3> rel_p, uvw, uvw_scaled, uvw_i; // Forward-declare variables we'll need to resolve the voxel we've hit once we've stepped to the isosurface
                 if (first_grid_hit && *isosurf_dist > -1.0f) // Isosurface distances initialize to [-1]; zero distances are reserved for subpixels that immediately touch a grid boundary
                 {
                     curr_ray.ori += curr_ray.dir * *isosurf_dist;
@@ -72,10 +71,10 @@ export namespace scene
                 vmath::vec<3> voxel_normal = vmath::vec<3>(0, 0, -1); // Normals, initialized to something mostly safe (for the default z-aligned view anyways)
 
                 // Resolve intersection cell each tap
-                rel_p = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f); // Relative position from lower object corner
-                uvw = rel_p / volume_nfo.transf.scale; // Normalized UVW
-                uvw_scaled = uvw * geometry::vol::width; // Voxel coordinates! :D
-                uvw_i = vmath::vfloor(uvw_scaled);
+                vmath::vec<3> rel_p = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f); // Relative position from lower object corner
+                vmath::vec<3> uvw = rel_p / volume_nfo.transf.scale; // Normalized UVW
+                vmath::vec<3> uvw_scaled = uvw * geometry::vol::width; // Voxel coordinates! :D
+                vmath::vec<3, i32> uvw_i = vmath::vec3_cast<vmath::vec<3>, vmath::vec<3, i32>>(vmath::vfloor(vmath::vabs(uvw_scaled))); // Probably paranoid, but voxel coordinates should never be negative
 
                 // Find the next cell intersection, and step into it before recalculating rel_p/uvw & checking occupancy again
                 // Using DDA means that cell steps travel directly to geometry, so any stepping failures mean that our rays leave geometry completely
@@ -86,7 +85,7 @@ export namespace scene
                 const bool cell_step_success = geometry::cell_step(curr_ray.dir, &curr_ray.ori, uvw_scaled, &uvw_i, &voxel_normal, first_grid_hit);
                 if (!cell_step_success) // No intersections along the given direction :(
                 {
-                    uvw_i = vmath::vmax(uvw_i, vmath::vec<3>(0, 0, 0));
+                    uvw_i = vmath::vmax(uvw_i, vmath::vec<3, i32>(0, 0, 0));
                     within_grid = false;
                 }
                 /*else

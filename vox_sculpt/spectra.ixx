@@ -21,10 +21,10 @@ export namespace spectra
     // https://www.desmos.com/calculator/zm9jwr0ngk
     vmath::vec<3> film(float rho)
     {
-        return vmath::vec<3>(vmath::fmax(vmath::quadratic(rho, 4.0f, 0.6f, 0.2f, true), 0.0f) +
-                             vmath::fmax(vmath::quadratic(rho, 4.0f, 3.0f, 1.0f, true), 0.0f),
-                             vmath::fmax(vmath::gaussian(rho, 1.0f, 0.5f, 0.2f, 0.05f), 0.0f),
-                             vmath::fmax(vmath::gaussian(rho, 1.0f, 0.0f, 0.55f, 0.2f) *
+        return vmath::vec<3>(vmath::max(vmath::quadratic(rho, 4.0f, 0.6f, 0.2f, true), 0.0f) +
+                             vmath::max(vmath::quadratic(rho, 4.0f, 3.0f, 1.0f, true), 0.0f),
+                             vmath::max(vmath::gaussian(rho, 1.0f, 0.5f, 0.2f, 0.05f), 0.0f),
+                             vmath::max(vmath::gaussian(rho, 1.0f, 0.0f, 0.55f, 0.2f) *
                                          vmath::quadratic(rho / 0.4f, 1.0f, -0.6f / 0.4f, -2.3f, false) *
                                          vmath::quadratic(rho, 1.0f, 0.95f, 0.0f, false) + 0.1f, 0.0f));
     }
