@@ -1,0 +1,51 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.4.32912.340
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vox-sculpt-refactor", "vox-sculpt-refactor\vox-sculpt-refactor.vcxproj", "{85811E4A-EA0C-464F-AC65-CFC6BD807A17}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SimpleTiling", "..\animuspix-libs\SimpleTiling\SimpleTiling\SimpleTiling.vcxproj", "{5EC4B911-B553-441F-A395-3515461CC2A6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+		Tracy_Profile|x64 = Tracy_Profile|x64
+		Tracy_Profile|x86 = Tracy_Profile|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Debug|x64.ActiveCfg = Debug|x64
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Debug|x64.Build.0 = Debug|x64
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Debug|x86.ActiveCfg = Debug|Win32
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Debug|x86.Build.0 = Debug|Win32
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Release|x64.ActiveCfg = Release|x64
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Release|x64.Build.0 = Release|x64
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Release|x86.ActiveCfg = Release|Win32
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Release|x86.Build.0 = Release|Win32
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Tracy_Profile|x64.ActiveCfg = Tracy_Profile|x64
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Tracy_Profile|x64.Build.0 = Tracy_Profile|x64
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Tracy_Profile|x86.ActiveCfg = Tracy_Profile|Win32
+		{85811E4A-EA0C-464F-AC65-CFC6BD807A17}.Tracy_Profile|x86.Build.0 = Tracy_Profile|Win32
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Debug|x64.ActiveCfg = Debug|x64
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Debug|x64.Build.0 = Debug|x64
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Debug|x86.ActiveCfg = Debug|Win32
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Debug|x86.Build.0 = Debug|Win32
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Release|x64.ActiveCfg = Release|x64
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Release|x64.Build.0 = Release|x64
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Release|x86.ActiveCfg = Release|Win32
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Release|x86.Build.0 = Release|Win32
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Tracy_Profile|x64.ActiveCfg = Tracy_Profile|x64
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Tracy_Profile|x64.Build.0 = Tracy_Profile|x64
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Tracy_Profile|x86.ActiveCfg = Tracy_Profile|Win32
+		{5EC4B911-B553-441F-A395-3515461CC2A6}.Tracy_Profile|x86.Build.0 = Tracy_Profile|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {FD0BBC11-00A7-40DF-87C0-F07D609E1859}
+	EndGlobalSection
+EndGlobal
