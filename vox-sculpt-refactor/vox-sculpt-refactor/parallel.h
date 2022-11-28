@@ -17,7 +17,7 @@ public:
     static uint32_t GetNumTilesX();
     static uint32_t GetNumTilesY();
 
-    static sampler::philox GetRNGStream(uint32_t tile_ndx);
+    static sampler::philox& GetRNGStream(uint32_t tile_ndx);
 
     static void init();
     static char* get_log_dst(uint8_t tile_ndx);

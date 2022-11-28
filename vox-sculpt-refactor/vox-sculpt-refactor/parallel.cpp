@@ -26,7 +26,7 @@ uint32_t parallel::GetNumTilesY()
     return numTilesY;
 }
 
-sampler::philox parallel::GetRNGStream(uint32_t tile_ndx)
+sampler::philox& parallel::GetRNGStream(uint32_t tile_ndx)
 {
     return rand_streams[tile_ndx];
 }
