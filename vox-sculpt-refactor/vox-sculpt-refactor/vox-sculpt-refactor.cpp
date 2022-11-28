@@ -76,7 +76,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             InvalidateRect(msg.hwnd, NULL, false); // Forcibly redraw every frame
         }
     }
-    simple_tiling::shutdown;
+    simple_tiling::shutdown();
+    mem::deinit();
     return (int) msg.wParam;
 }
 

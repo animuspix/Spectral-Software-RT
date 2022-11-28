@@ -380,9 +380,9 @@ namespace vmath
     template<vec3_type vec3, typename scalar>
     const bool anyGreater(vec3 lhs, scalar rhs)
     {
-        return lhs.e[0] > rhs ||
-            lhs.e[1] > rhs ||
-            lhs.e[2] > rhs;
+        return lhs.e[0] > (float)rhs ||
+               lhs.e[1] > (float)rhs ||
+               lhs.e[2] > (float)rhs;
     }
 
     template<vec3_type vec3, scalar_maths_type scalar>

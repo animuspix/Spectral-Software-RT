@@ -98,6 +98,9 @@
     <ClCompile Include="aa.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="parallel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="vox-sculpt-refactor.rc">

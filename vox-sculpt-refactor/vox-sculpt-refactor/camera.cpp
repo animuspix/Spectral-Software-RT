@@ -1,5 +1,25 @@
 #include "camera.h"
 
+// Intermediate sensor values for filtering/anti-aliasing/temporal integration
+sensel* sensor_grid;
+constexpr uint32_t sensor_grid_footprint = ui::window_width * ui::window_height * sizeof(sensel);
+
+// Screen color/picture data (8bpc)
+uint32_t* digital_colors;
+constexpr uint32_t digital_colors_footprint = ui::window_width * ui::window_height * sizeof(uint32_t);
+
+// Sum of the filter values used for each sample, per-sensor
+// Needed for correct image integration when I'm using non-boxy filters, since those filters
+// can integrate to more/less than 1 and (=> and lead to weird results unless you divide out
+// the sum of the filter values each frame)
+float* filter_sum_grid;
+constexpr uint32_t filter_sum_grid_footprint = ui::window_width * ui::window_height * sizeof(float);
+
+// Camera sampling! just perspective projection for now :)
+constexpr float FOV_RADS = vmath::pi * 0.5f;
+const vmath::vec<3> camera_pos() { return vmath::vec<3>(0, 0, -10.0f); }
+const float camera_z_axis() { return (ui::window_width * aa::samples_x) / vmath::ftan(FOV_RADS * 0.5f); }
+
 tracing::path_vt camera::lens_sample(uint32_t film_x, uint32_t film_y, float rand_u, float rand_v, float rho)
 {
     // Compute supersampled coordinates

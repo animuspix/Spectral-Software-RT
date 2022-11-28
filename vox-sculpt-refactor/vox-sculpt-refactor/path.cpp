@@ -14,7 +14,7 @@ void tracing::path::resolve_path_weights(float* rho_out, float* pdf_out, float* 
     float response = 1.0f;
     float power = 1.0f;
     *rho_out = vts[0].rho_sample;
-    for (uint32_t i = 0; i < size; i++)
+    for (int16_t i = 0; i < size; i++)
     {
         auto& bounce = vts[i];
         pdf *= bounce.pdf;

@@ -5,6 +5,90 @@
 #include "spectra.h"
 #include "mem.h"
 
+struct vol
+{
+    static constexpr uint32_t width = 1024; // All volumes are 1024 * 1024 * 1024
+    static constexpr uint32_t slice_area = width * width;
+    static constexpr uint32_t res = slice_area * width;
+    static constexpr float cell_size = 1.0f / width;
+    static constexpr uint32_t max_cell_ndx_per_axis = width - 1;
+    vol_nfo* metadata;
+
+    // Our geometry is composed of individual bits, grouped into 64-bit chunks;
+    // metachunks take that abstraction one layer higher by providing groups of 2x2x2
+    // chunks for efficient traversal (one metachunk is one cacheline)
+    // Individual voxels (within chunks) occupy one bit each; order is left-right/front-back/top-bottom
+    // front view:
+    // 00 01 02 03
+    // 16 17 18 19
+    // 32 33 34 35
+    // 48 49 50 51
+    // top view:
+    // 00 01 02 03
+    // 04 05 06 07
+    // 08 09 10 11
+    // 12 13 14 15
+    // bottom view:
+    // 48 49 50 51
+    // 52 53 54 55
+    // 56 57 58 59
+    // 60 61 62 63
+    // We evaluate these cells by constructing a 64-bit mask for the one we want to test; if the current chunk AND the mask is nonzero, we have a set cell, otherwise we have an empty one
+    uint8_t* metachunk_occupancies; // Direct mask of occupancies per-metachunk, for faster testing during chunk/metachunk traversal
+    struct metachunk
+    {
+        // Metachunk dimensions in chunks
+        static constexpr uint32_t res_x = 2;
+        static constexpr uint32_t res_y = 2;
+        static constexpr uint32_t res_z = 2;
+        static constexpr uint32_t res_xy = res_x * res_y;
+        static constexpr uint32_t res = res_xy * res_z;
+
+        // Chunk dimensions in voxels
+        static constexpr uint32_t chunk_res_x = 4;
+        static constexpr uint32_t chunk_res_y = 4;
+        static constexpr uint32_t chunk_res_z = 4;
+        static constexpr uint32_t chunk_res_xy = chunk_res_x * chunk_res_y;
+
+        // Metachunk dimensions in voxels
+        static constexpr uint32_t num_vox_x = res_x * chunk_res_x;
+        static constexpr uint32_t num_vox_y = res_y * chunk_res_y;
+        static constexpr uint32_t num_vox_z = res_z * chunk_res_z;
+        static constexpr uint32_t num_vox_xy = num_vox_x * num_vox_y;
+        static constexpr uint32_t num_vox = num_vox_xy * num_vox_z;
+
+        // Metachunk data
+        uint64_t chunks[res];
+    };
+
+    static constexpr uint32_t num_metachunks_x = width / metachunk::num_vox_x;
+    static constexpr uint32_t num_metachunks_y = width / metachunk::num_vox_y;
+    static constexpr uint32_t num_metachunks_z = width / metachunk::num_vox_z;
+    static constexpr uint32_t num_metachunks_xy = num_metachunks_x * num_metachunks_y;
+    static constexpr uint32_t num_metachunks = num_metachunks_xy * num_metachunks_z;
+    metachunk* metachunks;
+
+    uint32_t chunk_index_solver(vmath::vec<3, int32_t> uvw_floored); // Returns chunk index
+    uint32_t metachunk_index_solver(vmath::vec<3, int32_t> uvw_floored);
+    uint32_t metachunk_index_solver_fast(vmath::vec<3, int32_t> metachunk_uvw); // Returns metachunk index
+
+    struct voxel_ndces
+    {
+        uint8_t chunk;
+        uint64_t bitmask;
+    };
+
+    voxel_ndces voxel_index_solver(vmath::vec<3, int32_t> uvw_floored); // Returns metachunk + chunk + bitmask to select specific voxels within chunks
+    // [uvw_floored] is expected in voxel space (0...vol::width on each axis)
+
+    // Resolve screen-space volume bounds for the current camera transform
+    // (inverse lens sampling performed on the camera, so this just needs to resolve worldspace bounds and reproject them that way, before
+    // taking the min/max coordinates in the 2D plane and storing those)
+    void resolveSSBounds(vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>));
+};
+
+// The scene volume - only one of these is currently defined & interactable in-app
+vol volume;
 
 // Generic 3D index solver, assuming euclidean grid space and taking an index, width metric, and area metric
 template<uint32_t w, uint32_t a>
@@ -25,7 +109,7 @@ uint32_t flatten_ndx(vmath::vec<3> uvw)
     return static_cast<uint32_t>(res);
 }
 
-uint32_t geometry::geometry::vol::chunk_index_solver(vmath::vec<3, int32_t> uvw_floored) // Returns chunk index
+uint32_t vol::chunk_index_solver(vmath::vec<3, int32_t> uvw_floored) // Returns chunk index
 {
     // Scalarized logic to reduce vec<n> constructor calls
     //////////////////////////////////////////////////////
@@ -40,7 +124,7 @@ uint32_t geometry::geometry::vol::chunk_index_solver(vmath::vec<3, int32_t> uvw_
         (chunk_z * metachunk::res_xy)); // Volume offset;
 }
 
-uint32_t geometry::vol::metachunk_index_solver(vmath::vec<3, int32_t> uvw_floored) // Returns metachunk index
+uint32_t vol::metachunk_index_solver(vmath::vec<3, int32_t> uvw_floored) // Returns metachunk index
 {
     // Scalarized logic to reduce vec<n> constructor calls
     //////////////////////////////////////////////////////
@@ -53,24 +137,24 @@ uint32_t geometry::vol::metachunk_index_solver(vmath::vec<3, int32_t> uvw_floore
         (metachunk_z * num_metachunks_xy)); // Volume offset;
 }
 
-uint32_t geometry::vol::metachunk_index_solver_fast(vmath::vec<3, int32_t> metachunk_uvw) // Returns metachunk index
+uint32_t vol::metachunk_index_solver_fast(vmath::vec<3, int32_t> metachunk_uvw) // Returns metachunk index
 {
     return static_cast<uint32_t>(metachunk_uvw.x() + // Local scanline offset
         (metachunk_uvw.y() * num_metachunks_x) + // Local slice offset
         (metachunk_uvw.z() * num_metachunks_xy)); // Volume offset;
 }
 
-geometry::vol::voxel_ndces geometry::vol::voxel_index_solver(vmath::vec<3, int32_t> uvw_floored) // Returns metachunk + chunk + bitmask to select specific voxels within chunks
-                                                                             // [uvw_floored] is expected in voxel space (0...geometry::vol::width on each axis)
+vol::voxel_ndces vol::voxel_index_solver(vmath::vec<3, int32_t> uvw_floored) // Returns metachunk + chunk + bitmask to select specific voxels within chunks
+                                                                             // [uvw_floored] is expected in voxel space (0...vol::width on each axis)
 {
     // Return payload
-    geometry::vol::voxel_ndces ret;
+    vol::voxel_ndces ret;
 
     // Compute voxel bitmask
-    vmath::vec<3, int32_t> voxel_uvw = vmath::vec<3, int32_t>(uvw_floored.x() % geometry::vol::metachunk::chunk_res_x,
-        uvw_floored.y() % geometry::vol::metachunk::chunk_res_y,
-        uvw_floored.z() % geometry::vol::metachunk::chunk_res_z);
-    voxel_uvw *= vmath::vec<3, int32_t>(1, geometry::vol::metachunk::chunk_res_y, geometry::vol::metachunk::chunk_res_xy);
+    vmath::vec<3, int32_t> voxel_uvw = vmath::vec<3, int32_t>(uvw_floored.x() % vol::metachunk::chunk_res_x,
+        uvw_floored.y() % vol::metachunk::chunk_res_y,
+        uvw_floored.z() % vol::metachunk::chunk_res_z);
+    voxel_uvw *= vmath::vec<3, int32_t>(1, vol::metachunk::chunk_res_y, vol::metachunk::chunk_res_xy);
     ret.bitmask = ((1ull << voxel_uvw.z()) << voxel_uvw.y()) << voxel_uvw.x();
 
     // Compute chunk/metachunk indices
@@ -80,7 +164,7 @@ geometry::vol::voxel_ndces geometry::vol::voxel_index_solver(vmath::vec<3, int32
     return ret;
 }
 
-void geometry::vol::resolveSSBounds(vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
+void vol::resolveSSBounds(vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
 {
     // Resolve worldspace extents for our volume AABB
     // Will eventually need to adjust this code for different camera angles, zoom, panning, etc.
@@ -134,13 +218,13 @@ void geometry::vol::resolveSSBounds(vmath::vec<2>(*inverse_lens_sampler_fn)(vmat
 // set that chunk directly and skip ahead, etc.
 void geom_setup(uint32_t tile_ndx)
 {
-    const uint32_t num_tiles = static_cast<uint32_t>(parallel::numTilesX) * parallel::numTilesY;
-    const uint32_t slice_width = geometry::vol::num_metachunks_z / num_tiles; // Width for most slices except the last one, good enough for offset maths
+    const uint32_t num_tiles = parallel::GetNumTilesTotal();
+    const uint32_t slice_width = vol::num_metachunks_z / num_tiles; // Width for most slices except the last one, good enough for offset maths
     const uint32_t init_z = static_cast<uint32_t>(tile_ndx) * slice_width;
-    const uint32_t max_z = vmath::min(init_z + slice_width, geometry::vol::num_metachunks_z - init_z);
+    const uint32_t max_z = vmath::min(init_z + slice_width, vol::num_metachunks_z - init_z);
 
     // Scale sphere into metachunk space
-    constexpr float metachunk_ori = (geometry::vol::width / geometry::vol::metachunk::num_vox_x) / 2;
+    constexpr float metachunk_ori = (vol::width / vol::metachunk::num_vox_x) / 2;
     constexpr float r = metachunk_ori;
     constexpr float r2 = r * r;
     const vmath::vec<3> circOrigin(metachunk_ori,
@@ -148,10 +232,10 @@ void geom_setup(uint32_t tile_ndx)
                                    metachunk_ori);
 
     // Scale z-slices into metachunk space
-    uint32_t metachunk_ctr = init_z * geometry::vol::num_metachunks_xy;
-    uint32_t metachunk_ndx_min = flatten_ndx<geometry::vol::num_metachunks_x, geometry::vol::num_metachunks_xy>(vmath::vec<3>(0.0f, 0.0f, static_cast<float>(init_z)));
-    uint32_t metachunk_ndx_max = flatten_ndx<geometry::vol::num_metachunks_x, geometry::vol::num_metachunks_xy>(vmath::vec<3>(geometry::vol::num_metachunks_x - 1,
-                                                                                                               geometry::vol::num_metachunks_y - 1,
+    uint32_t metachunk_ctr = init_z * vol::num_metachunks_xy;
+    uint32_t metachunk_ndx_min = flatten_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(vmath::vec<3>(0.0f, 0.0f, static_cast<float>(init_z)));
+    uint32_t metachunk_ndx_max = flatten_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(vmath::vec<3>(vol::num_metachunks_x - 1,
+                                                                                                               vol::num_metachunks_y - 1,
                                                                                                                static_cast<float>(max_z)));
 
     // Set-up slices
@@ -166,14 +250,14 @@ void geom_setup(uint32_t tile_ndx)
 #ifndef TEST_SOLID_SPHERE
 #ifndef TEST_NOISE_CUBE
 #ifndef TEST_SOLID_CUBE
-        const vmath::vec<3> uvw = expand_ndx<geometry::vol::num_metachunks_x, geometry::vol::num_metachunks_xy>(i);
+        const vmath::vec<3> uvw = expand_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(i);
         const float d = (uvw - circOrigin).sqr_magnitude() - r2; // Sphere SDF
         sample[0] = 0.6f;
         if (d < 0.0f && sample[0] > 0.5f)
         {
             parallel::rand_streams[tile_ndx].next(sample);
             parallel::rand_streams[tile_ndx].next(sample + 4);
-            uint64_t* chunks = geometry::vol::metachunks[i].chunks;
+            uint64_t* chunks = volume.metachunks[i].chunks;
 
             // Fuzzy version of the metachunk sphere above, with occasional fireflies
             float t = 1.0f - (vmath::fabs(d) / r2);
@@ -212,21 +296,21 @@ void geom_setup(uint32_t tile_ndx)
         }
         else
         {
-            geometry::vol::metachunks[i].batch_assign(0);
+            volume.metachunks[i].batch_assign(0);
         }
 #else
-        geometry::vol::metachunks[i].batch_assign(255);
+        volume.metachunks[i].batch_assign(255);
 #endif
 #else
         // Load chunk data
-        uint64_t* chunks = geometry::vol::metachunks[i].chunks;
+        uint64_t* chunks = volume.metachunks[i].chunks;
 
         // Structural noise for clumping effects without excessively fine detail
         // (which was sampled out in prior versions)
 
         // Generate random values
-        parallel::rand_streams[tile_ndx].next(sample);
-        parallel::rand_streams[tile_ndx].next(sample + 4);
+        parallel::GetRNGStream(tile_ndx).next(sample);
+        parallel::GetRNGStream(tile_ndx).next(sample + 4);
 
         // Modulate first four chunks (first RNG tap)
         chunks[0] = static_cast<uint64_t>(sample[0] * 0xffffffffffffffff) & 0x7fffffffffffffff;
@@ -241,61 +325,52 @@ void geom_setup(uint32_t tile_ndx)
         chunks[7] = static_cast<uint64_t>(sample[7] * 0xffffffffffffffff) | 0x7fffffffffffffff;
 #endif
 #else
-        const vmath::vec<3> uvw = expand_ndx<geometry::vol::num_metachunks_x, geometry::vol::num_metachunks_xy>(i);
+        const vmath::vec<3> uvw = expand_ndx<vol::num_metachunks_x, vol::num_metachunks_xy>(i);
         const float d = (uvw - circOrigin).sqr_magnitude() - r2; // Sphere SDF
         uint8_t v = d < 0.0f ? 0xff : 0x0;
-        //geometry::vol::metachunks[i].batch_assign(v);
+        //volume.metachunks[i].batch_assign(v);
         for (uint32_t j = 0; j < 8; j++)
         {
-            geometry::vol::metachunks[i].chunks[j] = v;
+            volume.metachunks[i].chunks[j] = v;
         }
 #endif
         // Populate metachunk occupancy data
-        uint8_t occupancies = (geometry::vol::metachunks[i].chunks[0] > 0) |
-            ((geometry::vol::metachunks[i].chunks[1] > 0) << 1) |
-            ((geometry::vol::metachunks[i].chunks[2] > 0) << 2) |
-            ((geometry::vol::metachunks[i].chunks[3] > 0) << 3) |
-            ((geometry::vol::metachunks[i].chunks[4] > 0) << 4) |
-            ((geometry::vol::metachunks[i].chunks[5] > 0) << 5) |
-            ((geometry::vol::metachunks[i].chunks[6] > 0) << 6) |
-            ((geometry::vol::metachunks[i].chunks[7] > 0) << 7);
-        geometry::vol::metachunk_occupancies[i] = occupancies;
+        uint8_t occupancies = (volume.metachunks[i].chunks[0] > 0) |
+            ((volume.metachunks[i].chunks[1] > 0) << 1) |
+            ((volume.metachunks[i].chunks[2] > 0) << 2) |
+            ((volume.metachunks[i].chunks[3] > 0) << 3) |
+            ((volume.metachunks[i].chunks[4] > 0) << 4) |
+            ((volume.metachunks[i].chunks[5] > 0) << 5) |
+            ((volume.metachunks[i].chunks[6] > 0) << 6) |
+            ((volume.metachunks[i].chunks[7] > 0) << 7);
+        volume.metachunk_occupancies[i] = occupancies;
     };
 }
 
 void geometry::init(vmath::vec<2>(*inverse_lens_sampler_fn)(vmath::vec<3>))
 {
     // Allocate volume memory
-    geometry::vol::metadata = mem::allocate_tracing<geometry::vol::vol_nfo>(sizeof(geometry::vol::vol_nfo)); // Generalized volume info
-    geometry::vol::metachunks = mem::allocate_tracing<geometry::vol::metachunk>(geometry::vol::num_metachunks * sizeof(geometry::vol::metachunk)); // Generalized volume info
-    geometry::vol::metachunk_occupancies = mem::allocate_tracing<uint8_t>(geometry::vol::num_metachunks * sizeof(uint8_t));
+    volume.metadata = mem::allocate_tracing<vol_nfo>(sizeof(vol_nfo)); // Generalized volume info
+    volume.metachunks = mem::allocate_tracing<vol::metachunk>(vol::num_metachunks * sizeof(vol::metachunk)); // Generalized volume info
+    volume.metachunk_occupancies = mem::allocate_tracing<uint8_t>(vol::num_metachunks * sizeof(uint8_t));
+    platform::osClearMem(volume.metachunk_occupancies, vol::num_metachunks * sizeof(uint8_t)); // Significant performance penalty here, but it means we don't need to wait for updates on the main thread
+                                                                                               // (since any undefined metachunks should be zeroed out once we reach them)
 
     // Load/generate geometry
-//#define TIMED_GEOMETRY_UPLOAD
-#ifdef TIMED_GEOMETRY_UPLOAD
-    double geom_setup_t = platform::osGetCurrentTimeSeconds();
-#endif
     simple_tiling::submit_update_work(geom_setup);
 
-    // Wait for loader threads to finish
-    simple_tiling::WaitForTiles();
-
-#ifdef TIMED_GEOMETRY_UPLOAD
-    platform::osDebugLogFmt("geometry loaded within %f seconds \n", platform::osGetCurrentTimeSeconds() - geom_setup_t);
-    platform::osDebugBreak();
-#endif
     // Possible debugging helper for geometry here; build in a .png exporter, write out cells on a certain slice to black or white depending on activation status
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // Update transform metadata; eventually this should be loaded from disk
     // (position should probably be actually zeroed, there's no reason for users to modify it instead of moving the camera)
-    geometry::vol::metadata->transf.pos = vmath::vec<3>(0.0f, 0.0f, 20.0f);
-    geometry::vol::metadata->transf.orientation = vmath::vec<4>(0.0f, 0.0f, 0.0f, 1.0f);
-    geometry::vol::metadata->transf.scale = vmath::vec<3>(4, 4, 4);
-    geometry::vol::resolveSSBounds(inverse_lens_sampler_fn);
+    volume.metadata->transf.pos = vmath::vec<3>(0.0f, 0.0f, 20.0f);
+    volume.metadata->transf.orientation = vmath::vec<4>(0.0f, 0.0f, 0.0f, 1.0f);
+    volume.metadata->transf.scale = vmath::vec<3>(4, 4, 4);
+    volume.resolveSSBounds(inverse_lens_sampler_fn);
 
     // Update material metadata; eventually this should be loaded from disk
-    materials::instance& boxMat = geometry::vol::metadata->mat;
+    materials::instance& boxMat = volume.metadata->mat;
     boxMat.material_type = material_labels::DIFFUSE;
     boxMat.roughness = 0.2f;
     boxMat.spectral_ior = vmath::fn<4, const float>(spectra::placeholder_spd);
@@ -307,31 +382,31 @@ void geometry::spin(float xrot, float yrot)
     vmath::vec<3> axes(vmath::fsin(xrot), vmath::fsin(yrot), 0.0f);
     vmath::vec<4> q_xrot(axes.x(), 0.0f, 0.0f, vmath::fcos(xrot));
     vmath::vec<4> q_yrot(0.0f, axes.y(), 0.0f, vmath::fcos(yrot));
-    geometry::vol::metadata->transf.orientation = vmath::qtn_rotation_concat(vmath::qtn_rotation_concat(q_xrot, q_yrot), geometry::vol::metadata->transf.orientation);
+    volume.metadata->transf.orientation = vmath::qtn_rotation_concat(vmath::qtn_rotation_concat(q_xrot, q_yrot), volume.metadata->transf.orientation);
 }
 
 void geometry::zoom(float z)
 {
     z = vmath::max(z + 1.0f, 0.0f); // Keep z above 0.0f
     // (+ above 1.0f by default)
-    geometry::vol::metadata->transf.scale *= z;
+    volume.metadata->transf.scale *= z;
 }
 
 // Test the bounding geometry for the volume grid
 // Used to quickly mask out rays that immediately hit the sky or an external light source
-bool geometry::test(vmath::vec<3> dir, vmath::vec<3>* ro_inout, geometry::geometry::vol::vol_nfo* vol_nfo_out)
+bool geometry::test(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vol_nfo* vol_nfo_out)
 {
     // Compute transformed ray position & direction
-    vmath::vec<3> pos = geometry::vol::metadata->transf.pos;
+    vmath::vec<3> pos = volume.metadata->transf.pos;
     vmath::vec<3> ro = *ro_inout - pos;
-    vmath::vec<3> rd = qtn_rotation_apply(dir, geometry::vol::metadata->transf.orientation);
+    vmath::vec<3> rd = qtn_rotation_apply(dir, volume.metadata->transf.orientation);
 
     // Intersection vmath adapted from
     // https://www.shadertoy.com/view/ltKyzm, itself adapted from the Scratchapixel tutorial here:
     // https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
 
     // Synthesize box boundaries
-    const vmath::vec<3> extents = geometry::vol::metadata->transf.scale * 0.5f; // Extents from object origin
+    const vmath::vec<3> extents = volume.metadata->transf.scale * 0.5f; // Extents from object origin
     const vmath::vec<3> boundsMin = (pos - extents);
     const vmath::vec<3> boundsMax = (pos + extents);
 
@@ -369,7 +444,7 @@ bool geometry::test(vmath::vec<3> dir, vmath::vec<3>* ro_inout, geometry::geomet
    if (isect)
    {
        *ro_inout = *ro_inout + (dir * sT.e[0]);
-       *vol_nfo_out = *geometry::vol::metadata;
+       *vol_nfo_out = *volume.metadata;
        return true;
    }
    return false;
@@ -388,9 +463,9 @@ bool geometry::cell_step(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vmath::vec<
     // Make sure any rays that enter this function have safe starting values
     // Also validate against error cases (incoming coordinates more than one unit from a boundary)
     vmath::vec<3, int32_t> uvw_floored = *uvw_i_inout;
-    const vmath::vec<3> bounds_dist_max = uvw_in - vmath::vec<3>(geometry::vol::width, geometry::vol::width, geometry::vol::width);
+    const vmath::vec<3> bounds_dist_max = uvw_in - vmath::vec<3>(vol::width, vol::width, vol::width);
     const vmath::vec<3, int32_t> bounds_dist_min = vmath::vec<3, int32_t>(0, 0, 0) - uvw_floored;
-    if (vmath::allGreater(bounds_dist_max, 0.0f) || vmath::allGreater(bounds_dist_min, -1)) // coordinates equal to geometry::vol::width are still out of bounds :p
+    if (vmath::allGreater(bounds_dist_max, 0.0f) || vmath::allGreater(bounds_dist_min, -1)) // coordinates equal to vol::width are still out of bounds :p
     {
         // Something funky, bad coordinates or generating coordinates when we're outside the scene bounding box
 //#define VALIDATE_CELL_RANGES
@@ -402,16 +477,16 @@ bool geometry::cell_step(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vmath::vec<
 #endif
 
         // Most cases will be regular rounding error :D
-        vmath::clamp(uvw_in, vmath::vec<3>(0.0f), vmath::vec<3>(geometry::vol::width - 1));
-        vmath::clamp(uvw_floored, vmath::vec<3, int32_t>(0), vmath::vec<3, int32_t>(geometry::vol::width - 1));
+        vmath::clamp(uvw_in, vmath::vec<3>(0.0f), vmath::vec<3>(vol::width - 1));
+        vmath::clamp(uvw_floored, vmath::vec<3, int32_t>(0), vmath::vec<3, int32_t>(vol::width - 1));
     }
 
     // We only traverse primary rays with an empty starting cell (since otherwise we can return immediately)
     // For non-primary rays (bounce rays) we ignore the starting cell and iterate through any others along the ray
     // direction
-    const uint32_t init_metachunk_ndx = geometry::vol::metachunk_index_solver(uvw_floored);
-    const geometry::vol::voxel_ndces init_ndces = geometry::vol::voxel_index_solver(uvw_floored);
-    uint64_t chunk_state = geometry::vol::metachunks[init_metachunk_ndx].chunks[init_ndces.chunk] & init_ndces.bitmask;
+    const uint32_t init_metachunk_ndx = volume.metachunk_index_solver(uvw_floored);
+    const vol::voxel_ndces init_ndces = volume.voxel_index_solver(uvw_floored);
+    uint64_t chunk_state = volume.metachunks[init_metachunk_ndx].chunks[init_ndces.chunk] & init_ndces.bitmask;
     bool traversing = primary_ray ? (chunk_state == 0) : true; // We want to traverse empty cells on hit, and bounce off full ones
 
     // Core traversal loop/immediate return
@@ -455,8 +530,8 @@ bool geometry::cell_step(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vmath::vec<
                 /* d_pos.x() < d_pos.y() || d_pos.x() <= d_pos.z() */ 2 /* : 0*/;
 
             // Scale our step sizes differently for different traversal granularities
-            const uint32_t dda_res = mode == METACHUNK ? geometry::vol::metachunk::num_vox_x :
-                mode == CHUNK ? geometry::vol::metachunk::chunk_res_x :
+            const uint32_t dda_res = mode == METACHUNK ? vol::metachunk::num_vox_x :
+                mode == CHUNK ? vol::metachunk::chunk_res_x :
                 /*VOXEL ? */1;
 
             // We want to weight each continuous step by its axis' contribution to the slope of the ray direction
@@ -466,22 +541,22 @@ bool geometry::cell_step(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vmath::vec<
             uvw_floored.e[min_axis] += static_cast<int32_t>(d_uvw.e[min_axis] * dda_res); // Optional scale here for metachunk traversal
 
             // Ray escaped the volume :o
-            if (vmath::anyGreater(uvw_floored, geometry::vol::width - 1) || vmath::anyLesser(uvw_floored, 0))
+            if (vmath::anyGreater(uvw_floored, vol::width - 1) || vmath::anyLesser(uvw_floored, 0))
             {
-                uvw_floored = vmath::clamp(uvw_floored, vmath::vec<3, int32_t>(0, 0, 0), vmath::vec<3, int32_t>(geometry::vol::width - 1, geometry::vol::width - 1, geometry::vol::width - 1));
+                uvw_floored = vmath::clamp(uvw_floored, vmath::vec<3, int32_t>(0, 0, 0), vmath::vec<3, int32_t>(vol::width - 1, vol::width - 1, vol::width - 1));
                 cell_found = false;
                 break;
             }
 
             // We calculate metachunk indices in every branch, so might as well move that here
-            uint32_t local_metachunk_ndx = geometry::vol::metachunk_index_solver(uvw_floored);
+            uint32_t local_metachunk_ndx = volume.metachunk_index_solver(uvw_floored);
 
             // Successful intersections :D
             // (or possibly rays passing through lower levels without hitting anything - move back up to higher levels in that case)
             if (mode == METACHUNK)
             {
                 metachunk_ndx = local_metachunk_ndx;
-                uint8_t metachunk_data = geometry::vol::metachunk_occupancies[metachunk_ndx];
+                uint8_t metachunk_data = volume.metachunk_occupancies[metachunk_ndx];
                 if (metachunk_data)
                 {
                     current_metachunk = metachunk_data;
@@ -490,7 +565,7 @@ bool geometry::cell_step(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vmath::vec<
             }
             else if (mode == CHUNK)
             {
-                chunk_ndx = geometry::vol::chunk_index_solver(uvw_floored);
+                chunk_ndx = volume.chunk_index_solver(uvw_floored);
                 current_chunk_mask = 1 << chunk_ndx;
 
                 if (metachunk_ndx != local_metachunk_ndx)
@@ -506,7 +581,7 @@ bool geometry::cell_step(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vmath::vec<
             }
             else if (mode == VOXEL)
             {
-                const geometry::vol::voxel_ndces ndces = geometry::vol::voxel_index_solver(uvw_floored);
+                const vol::voxel_ndces ndces = volume.voxel_index_solver(uvw_floored);
                 if (chunk_ndx != ndces.chunk)
                 {
                     if (metachunk_ndx != local_metachunk_ndx)
@@ -522,7 +597,7 @@ bool geometry::cell_step(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vmath::vec<
                 }
                 else
                 {
-                    uint64_t current_chunk = geometry::vol::metachunks[local_metachunk_ndx].chunks[ndces.chunk];
+                    uint64_t current_chunk = volume.metachunks[local_metachunk_ndx].chunks[ndces.chunk];
                     if ((current_chunk & ndces.bitmask) > 0)
                     {
                         cell_found = true;
@@ -556,17 +631,17 @@ bool geometry::cell_step(vmath::vec<3> dir, vmath::vec<3>* ro_inout, vmath::vec<
         // Original math from [scene.ixx]
         //rel_p = (curr_ray.ori - volume_nfo.transf.pos) + (volume_nfo.transf.scale * 0.5f); // Relative position from lower object corner
         //uvw = rel_p / volume_nfo.transf.scale; // Normalized UVW
-        //uvw_scaled = uvw * geometry::geometry::vol::width; // Voxel coordinates! :D
+        //uvw_scaled = uvw * geometry::vol::width; // Voxel coordinates! :D
 
         // Reversed math
         vmath::vec<3> ro = vmath::vec<3>(uvw_floored.x(), uvw_floored.y(), uvw_floored.z());// + (dir * t.magnitude()); // Apply position delta
-        ro /= geometry::vol::width; // Back to UVW space (0...1)
-        ro *= geometry::vol::metadata->transf.scale; // Back to object space
-        ro -= geometry::vol::metadata->transf.scale * 0.5f; // Position relative to centre, not lower corner
-        ro += geometry::vol::metadata->transf.pos; // Back to worldspace :D
+        ro /= vol::width; // Back to UVW space (0...1)
+        ro *= volume.metadata->transf.scale; // Back to object space
+        ro -= volume.metadata->transf.scale * 0.5f; // Position relative to centre, not lower corner
+        ro += volume.metadata->transf.pos; // Back to worldspace :D
         ro = vmath::clamp(ro,
-            vmath::vec<3>(geometry::vol::metadata->transf.pos - geometry::vol::metadata->transf.scale * 0.5f),
-            vmath::vec<3>(geometry::vol::metadata->transf.pos + geometry::vol::metadata->transf.scale * 0.5f));
+            vmath::vec<3>(volume.metadata->transf.pos - volume.metadata->transf.scale * 0.5f),
+            vmath::vec<3>(volume.metadata->transf.pos + volume.metadata->transf.scale * 0.5f));
         *ro_inout = ro;
 
         // Return cell discovery state
