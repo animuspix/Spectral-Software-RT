@@ -46,8 +46,8 @@ public:
     // instead (not 100% sure what that would look like)
     static void sensor_response(float rho, float rho_weight, float pdf, float power, uint32_t ndx, uint32_t sample_num);
 
-    // Tonemap + write to digital output :)
-    static void tonemap_out(uint32_t ndx);
+    // Tonemap + return for digital output :)
+    static uint32_t tonemap_out(uint32_t ndx);
 
     // Initialize
     static void init();

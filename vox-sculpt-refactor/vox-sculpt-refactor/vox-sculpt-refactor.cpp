@@ -12,6 +12,7 @@
 #include "parallel.h"
 #include "platform.h"
 #include "geometry.h"
+#include "tracing.h"
 
 #define MAX_LOADSTRING 100
 
@@ -59,15 +60,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     // Geometry set-up issued here
     geometry::init(camera::inverse_lens_sample);
+    tracing::integration::init();
+    tracing::integration::set_render_mode(tracing::integration::RENDER_MODE_FINAL_PREVIEW);
 
     // Main message loop:
     while (GetMessage(&msg, nullptr, 0, 0))
     {
         // Issue batched ray-tracing work
-        simple_tiling::submit_draw_work([](simple_tiling_utils::v_type pixels, simple_tiling_utils::color_batch* colors_out)
-        {
-            /* Ray-tracing work issued here */
-        });
+        tracing::integration::image_integrator();
 
         if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
         {
@@ -133,7 +133,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    // Required to be initialized early, since [ShowWindow] will invoke WM_PAINT -> ::win_paint, which depeends on
    // a valid BITMAPINFO being defined for copy-outs
-   simple_tiling::setup(platform::osResolveAvailableThreads(), ui::window_width, ui::window_height, true);
+   simple_tiling::setup(platform::osResolveAvailableThreads(), ui::window_width, ui::window_height, false);
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);

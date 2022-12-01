@@ -4,10 +4,6 @@
 sensel* sensor_grid;
 constexpr uint32_t sensor_grid_footprint = ui::window_width * ui::window_height * sizeof(sensel);
 
-// Screen color/picture data (8bpc)
-uint32_t* digital_colors;
-constexpr uint32_t digital_colors_footprint = ui::window_width * ui::window_height * sizeof(uint32_t);
-
 // Sum of the filter values used for each sample, per-sensor
 // Needed for correct image integration when I'm using non-boxy filters, since those filters
 // can integrate to more/less than 1 and (=> and lead to weird results unless you divide out
@@ -93,7 +89,7 @@ vmath::vec<2> camera::inverse_lens_sample(vmath::vec<3> world_pos)
 void camera::sensor_response(float rho, float rho_weight, float pdf, float power, uint32_t ndx, uint32_t sample_num)
 {
     // Resolve responses per-channel
-    vmath::vec<3> rgb = spectra::film(rho) * rho_weight * (power / pdf);
+    const vmath::vec<3> rgb = spectra::film(rho) * rho_weight * (power / pdf);
 
     // Compose isolated colours into a sensor value, apply accumulated weights
     // (from path-tracing + spectral integration), write to sensor output :)
@@ -112,7 +108,7 @@ void camera::sensor_response(float rho, float rho_weight, float pdf, float power
     }
 }
 
-void camera::tonemap_out(uint32_t ndx)
+uint32_t camera::tonemap_out(uint32_t ndx)
 {
     // Tonemap into integer 8bpc + return
     // Tonemapped with ACES, source:
@@ -126,22 +122,22 @@ void camera::tonemap_out(uint32_t ndx)
         const float e = 0.14f;
         return (x * (a * x + b)) / (x * (c * x + d) + e);
     };
-    sensel sensor_v = sensor_grid[ndx] / filter_sum_grid[ndx];
+    sensel sensor_v = sensor_grid[ndx] / 1.0f; //filter_sum_grid[ndx]; // Normalizing this until I can bring back lens sampling (vectorized!)
     const uint32_t r = static_cast<uint32_t>(aces(vmath::clamp(sensor_v.r, 0.0f, 1.0f)) * 256);
     const uint32_t g = static_cast<uint32_t>(aces(vmath::clamp(sensor_v.g, 0.0f, 1.0f)) * 256);
     const uint32_t b = static_cast<uint32_t>(aces(vmath::clamp(sensor_v.b, 0.0f, 1.0f)) * 256);
     const uint32_t a = 0x0;
-    digital_colors[ndx] = b |
-        (g << 8) |
-        (r << 16) |
-        (a << 24);
+    return (b        |
+           (g << 8)  |
+           (r << 16) |
+           (a << 24));
 }
 
 void camera::init()
 {
     //assert(mem::tracing_arena != nullptr);
     sensor_grid = mem::allocate_tracing<sensel>(sensor_grid_footprint);
-    digital_colors = mem::allocate_tracing<uint32_t>(digital_colors_footprint);
     filter_sum_grid = mem::allocate_tracing<float>(filter_sum_grid_footprint);
+    platform::osClearMem(sensor_grid, sensor_grid_footprint);
     platform::osClearMem(filter_sum_grid, filter_sum_grid_footprint);
 }
