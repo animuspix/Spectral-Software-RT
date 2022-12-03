@@ -7,21 +7,18 @@
 #include "parallel.h"
 #include <stdint.h>
 #include "platform.h"
-//#include "scene.h"
+#include "traversal.h"
 #include "geometry.h"
 #include "spectra.h"
 #include "sampler.h"
-//#include "lights.h"
 #include "aa.h"
 #include "tracing.h"
 
 #include "../../animuspix-libs/SimpleTiling/SimpleTiling/SimpleTiling.h"
 
-tracing::path* cameraPaths; // One reusable path/tile for now, minx * miny expected for VCM
-// (so we can process each one multiple times against arbitrary light paths)
-//path* lightPaths;
+tracing::path* cameraPaths; // One unique path/sensel - easier to parallelise, friendlier to VCM (when I eventually get around to it)
+//tracing::path* lightPaths;
 float* isosurf_distances; // Distances to sculpture boundaries from grid bounds, per-subpixel, refreshed on camera zoom/rotate + animation timesteps (if/when I decide to implement those)
-std::atomic<uint32_t>* sample_ctr_per_tile = nullptr;
 uint32_t* sample_ctr_per_sensel = nullptr;
 vmath::vec<2>* tracing_tile_positions = nullptr;
 vmath::vec<2>* tracing_tile_bounds = nullptr;
@@ -39,6 +36,9 @@ uint32_t tile_area = 0;
 uint32_t tiles_x = 0;
 uint32_t tiles_y = 0;
 
+// Tile draw mask - useful for culling work submission on fully-sampled tiles (mostly in preview mode)
+std::atomic<uint64_t> tile_mask = UINT64_MAX;
+
 // Set the render mode to use in the next "frame"
 tracing::integration::RENDER_MODES renderMode = tracing::integration::RENDER_MODE_EDIT; // Edit mode by default
 void tracing::integration::set_render_mode(RENDER_MODES mode)
@@ -53,7 +53,7 @@ void tracing::integration::clear_render_state()
 
     platform::osClearMem(cameraPaths, sizeof(path) * numTiles);
     platform::osClearMem(spectral_strata, sizeof(spectra::spectral_buckets) * ui::window_area);
-    platform::osClearMem(sample_ctr_per_tile, sizeof(uint32_t) * numTiles);
+    platform::osClearMem(&tile_mask, sizeof(uint64_t));
     platform::osClearMem(sample_ctr_per_sensel, sizeof(uint32_t) * ui::window_area);
 
     for (uint32_t i = 0; i < numTiles; i++)
@@ -70,22 +70,11 @@ void tracing::integration::clear_render_state()
 // updates to the window
 void tracing::integration::image_integrator()
 {
-    // Build-up draw mask from tile sample counts
-    uint64_t draw_mask = UINT64_MAX;
-    uint32_t numTilesTotal = parallel::GetNumTilesTotal();
-    for (uint32_t i = 0; i < numTilesTotal; i++)
-    {
-        if (sample_ctr_per_tile[i] >= (aa::max_samples * tile_area))
-        {
-            draw_mask ^= 1ull << i;
-        }
-    }
-
     // Broadcast draw work over all remaining tiles, using the mask we composed before
     simple_tiling::submit_draw_work([](simple_tiling_utils::v_type pixels, simple_tiling_utils::color_batch* output)
     {
         // Compute tile index from current pixels (all 8 should be in the same tile)
-        float window_width = ui::window_width;
+        const float window_width = ui::window_width;
         auto wvec = v_op(set1_ps)(window_width);
         auto yvec = v_op(floor_ps)(v_op(div_ps)(pixels, wvec));
         auto xvec = v_op(sub_ps)(pixels, v_op(mul_ps)(yvec, wvec));
@@ -102,8 +91,23 @@ void tracing::integration::image_integrator()
         uint32_t tile_x = pixels_x[0] / tile_width;
         uint32_t tile_ndx = (tile_y * tiles_x) + tile_x;
 
-        //#define DEMO_SPECTRAL_PT
-#define DEMO_FILM_RESPONSE
+        // Eventually consistent oversampling test, to account for interlacing;
+        // if all pixels/batches are fully sampled, none of them should take
+        // the else branch and the tile will eventually be dropped from the
+        // dispatch mask
+        uint32_t batch_samples = sample_ctr_per_sensel[uint32_t(_pixels[0])];
+        if (batch_samples > aa::max_samples)
+        {
+            tile_mask &= ~(1ull << tile_ndx);
+            return;
+        }
+        else
+        {
+            tile_mask |= (1ull << tile_ndx);
+        }
+
+        #define DEMO_SPECTRAL_PT
+//#define DEMO_FILM_RESPONSE
 //#define DEMO_XOR
 //#define DEMO_NOISE
 //#define DEMO_AND
@@ -131,68 +135,62 @@ void tracing::integration::image_integrator()
         // Should try to vectorize these functions in future
         for (uint32_t i = 0; i < NUM_VECTOR_LANES; i++)
         {
-            camera::sensor_response((float)pixels_x[i] / (float)ui::window_width, 1.0f / aa::max_samples, 1.0f, 1.0f, _pixels[i], sample_ctr_per_sensel[uint32_t(_pixels[i])]);
+            camera::sensor_response((float)pixels_x[i] / (float)ui::window_width, 1.0f / aa::max_samples, 1.0f, 1.0f, _pixels[i], batch_samples);
             output->colors8bpc[i] = camera::tonemap_out(_pixels[i]);
             sample_ctr_per_sensel[uint32_t(_pixels[i])]++;
         }
 #elif defined (DEMO_SPECTRAL_PT)
-        // Draw random values for lens sampling
-        float sample[4];
-        parallel::GetRNGStream(tile_ndx).next(sample);
-
-        // Resolve a spectral sample for the current pixel
-        float s = spectral_strata[pixel_ndx].draw_sample(sample[0], sample[1]);
-               // Intersect the scene/the background
-        float rho, pdf, rho_weight, power;
-        const path_vt cam_vt = camera::lens_sample((float)x, (float)y, sample[2], sample[3], s);
-        if (!bg_prepass) // If not shading the background, scatter light through the scene
+        // Scalar loop for now - eventually we want to vectorize this
+        for (uint32_t i = 0; i < NUM_VECTOR_LANES; i++)
         {
-            scene::isect(cam_vt,
-                cameraPaths + tile_ndx, isosurf_distances + pixel_ndx, tile_ndx);
+            // Draw random values for lens sampling
+            float sample[4];
+            parallel::GetRNGStream(tile_ndx).next(sample);
+
+            const uint32_t pixel_ndx = (uint32_t)_pixels[i];
+            const uint32_t path_ndx = (tile_ndx * NUM_VECTOR_LANES) + i;
+
+            // Resolve a spectral sample for the current pixel
+            float s = spectral_strata[pixel_ndx].draw_sample(sample[0], sample[1]);
+
+            // Intersect the scene/the background
+            float rho, pdf, rho_weight, power;
+            const path_vt cam_vt = camera::lens_sample((float)pixels_x[i], (float)pixels_y[i], sample[2], sample[3], s);
+            traversal::iterate(cam_vt, cameraPaths + path_ndx, isosurf_distances + pixel_ndx, tile_ndx);
             //scene::isect(lights::sky_sample(x, y, sample[0]), lightPaths[tile_ndx]);
 
             // Integrate scene contributions (unidirectional for now)
-            cameraPaths[tile_ndx].resolve_path_weights(&rho, &pdf, &rho_weight, &power); // Light/camera path merging decisions are performed while we integrate camera paths,
+            cameraPaths[path_ndx].resolve_path_weights(&rho, &pdf, &rho_weight, &power); // Light/camera path merging decisions are performed while we integrate camera paths,
             // so we only need to resolve weights for one batch
 
             // Remove the current path from the backlog for this tile
             // (BDPT/VCM implementation will delay this until after separately tracing every path)
-            cameraPaths[tile_ndx].clear();
+            cameraPaths[path_ndx].clear();
             //lightPaths[tile_ndx].clear();
 
             // Test for unresolved/buggy paths
             //if (cameraPaths[tile_ndx].front > 0) platform::osDebugBreak();
+            // Compute sensor response + apply sample weight (composite of integration weight for spectral accumulation,
+            // lens-sampled filter weight for AA, and path index weights from ray propagation)
+            camera::sensor_response(rho, rho_weight, pdf, power, pixel_ndx, sample_ctr_per_sensel[pixel_ndx]);
+
+            // Map resolved sensor responses back into tonemapped RGB values we can store for output
+            output->colors8bpc[i] = camera::tonemap_out(pixel_ndx);
+            sample_ctr_per_sensel[pixel_ndx]++;
+
+            // Update weight for the bucket containing the current spectral sample
+            spectral_strata[pixel_ndx].update(rho_weight);
         }
-        else // Otherwise hop directly to the sky
-             // Similar code to the escaped-path light sampling in [scene.ixx]
-        {
-            vmath::vec<3> ori = cam_vt.ori + (cam_vt.dir * lights::sky_dist);
-            rho = cam_vt.rho_sample;
-            rho_weight = spectra::sky(cam_vt.rho_sample, cam_vt.dir.e[1]);
-            power = cam_vt.power * lights::sky_env(&pdf);
-            pdf = 1.0f; // No scene sampling and uniform sky (for now), so we assume 100% probability for all rays (=> all rays are equally likely)
-        }
-
-        // Compute sensor response + apply sample weight (composite of integration weight for spectral accumulation,
-        // lens-sampled filter weight for AA, and path index weights from ray propagation)
-        camera::sensor_response(rho, rho_weight, pdf, power, pixel_ndx, sample_ctr[tile_ndx]);
-
-        // Map resolved sensor responses back into tonemapped RGB values we can store for output
-        camera::tonemap_out(pixel_ndx);
-
-        // Update weight for the bucket containing the current spectral sample
-        spectral_strata[pixel_ndx].update(rho_weight);
 #endif
-        sample_ctr_per_tile[tile_ndx]++;
-    }, draw_mask);
+    }, tile_mask);
 }
 
 void tracing::integration::init()
 {
     // Allocate tracing arrays
     const uint32_t numTiles = parallel::GetNumTilesTotal();
-    cameraPaths = mem::allocate_tracing<path>(sizeof(path) * numTiles);
-    sample_ctr_per_tile = mem::allocate_tracing<std::atomic<uint32_t>>(sizeof(std::atomic<uint32_t>) * numTiles);
+    const uint32_t numParallelPaths = NUM_VECTOR_LANES * numTiles;
+    cameraPaths = mem::allocate_tracing<path>(sizeof(path) * numParallelPaths);
     sample_ctr_per_sensel = mem::allocate_tracing<uint32_t>(sizeof(uint32_t) * ui::window_area);
     tracing_tile_positions = mem::allocate_tracing<vmath::vec<2>>(sizeof(vmath::vec<2>) * numTiles);
     tracing_tile_bounds = mem::allocate_tracing<vmath::vec<2>>(sizeof(vmath::vec<2>) * numTiles);
@@ -207,14 +205,13 @@ void tracing::integration::init()
     }
 
     // Resolve tracing types
-    platform::osClearMem(cameraPaths, sizeof(path) * numTiles);
+    platform::osClearMem(cameraPaths, sizeof(path) * numParallelPaths);
     for (uint32_t i = 0; i < ui::window_area; i++)
     {
         isosurf_distances[i] = -1.0f; // Reserve zero distance for voxels directly facing a grid boundary
     }
 
     // Zero sample counters
-    platform::osClearMem(sample_ctr_per_tile, sizeof(std::atomic<uint32_t>) * numTiles);
     platform::osClearMem(sample_ctr_per_sensel, sizeof(uint32_t) * ui::window_area);
 
     // Resolve tile dimensions

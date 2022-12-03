@@ -197,6 +197,7 @@
     <ClInclude Include="camera.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="geometry.h" />
+    <ClInclude Include="lights.h" />
     <ClInclude Include="materials.h" />
     <ClInclude Include="mem.h" />
     <ClInclude Include="parallel.h" />
@@ -204,6 +205,7 @@
     <ClInclude Include="platform.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="sampler.h" />
+    <ClInclude Include="traversal.h" />
     <ClInclude Include="spectra.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="tracing.h" />
@@ -215,12 +217,14 @@
     <ClCompile Include="aa.cpp" />
     <ClCompile Include="camera.cpp" />
     <ClCompile Include="geometry.cpp" />
+    <ClCompile Include="lights.cpp" />
     <ClCompile Include="materials.cpp" />
     <ClCompile Include="mem.cpp" />
     <ClCompile Include="parallel.cpp" />
     <ClCompile Include="path.cpp" />
     <ClCompile Include="platform.cpp" />
     <ClCompile Include="sampler.cpp" />
+    <ClCompile Include="traversal.cpp" />
     <ClCompile Include="spectra.cpp" />
     <ClCompile Include="tracing.cpp" />
     <ClCompile Include="vmath.cpp" />

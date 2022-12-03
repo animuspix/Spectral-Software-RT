@@ -66,6 +66,12 @@
     <ClInclude Include="tracing.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="traversal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lights.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="vox-sculpt-refactor.cpp">
@@ -105,6 +111,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="tracing.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="traversal.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="lights.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

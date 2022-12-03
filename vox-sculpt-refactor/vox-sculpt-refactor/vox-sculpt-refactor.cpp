@@ -133,7 +133,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    // Required to be initialized early, since [ShowWindow] will invoke WM_PAINT -> ::win_paint, which depeends on
    // a valid BITMAPINFO being defined for copy-outs
-   simple_tiling::setup(platform::osResolveAvailableThreads(), ui::window_width, ui::window_height, false);
+   simple_tiling::setup(platform::osResolveAvailableThreads(), ui::window_width, ui::window_height, true);
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
