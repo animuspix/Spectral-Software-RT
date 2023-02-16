@@ -88,9 +88,11 @@ export namespace vmath
             //platform::osAssertion(q.sqr_magnitude() == 1.0f && sqr_magnitude() == 1.0f); // Rotation quaternions should have unit magnitude
             vmath::vec<3> v = xyz();
             vec<3> a = w() * q.xyz();
-            vec<3> b = q.w() * v;
+            vec<3> b(q.w() * v.x(), q.w() * v.y(), q.w() * v.z());
             vec<3> ortho = a.cross(b);
-            vec<3> u = a + b + ortho;
+            vec<3> u = vec<3>(a.x() + b.x() + ortho.x(),
+                              a.y() + b.y() + ortho.y(),
+                              a.z() + b.z() + ortho.z());
             return vec<4>(u.x(), u.y(), u.z(),
                           (w() * q.w()) - v.dot(q.xyz()));
         }
