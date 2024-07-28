@@ -83,13 +83,13 @@ export namespace sampler
                 // Update key
                 constexpr u64 bump = (0x9E3779B9 | ((u64)0xBB67AE85 << 32));
                 key += bump;
-
-                // Pass updated state back to the callsite
-                output[0] = ctr[0] / 4294967295.0f;
-                output[1] = ctr[1] / 4294967295.0f;
-                output[2] = ctr[2] / 4294967295.0f;
-                output[3] = ctr[3] / 4294967295.0f;
             }
+
+            // Pass updated state back to the callsite
+            output[0] = ctr[0] / 4294967295.0f;
+            output[1] = ctr[1] / 4294967295.0f;
+            output[2] = ctr[2] / 4294967295.0f;
+            output[3] = ctr[3] / 4294967295.0f;
         }
 
         // Initialization assumes one seed/tile

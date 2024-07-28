@@ -288,8 +288,8 @@ namespace tracing
                                 float qHeight = (vmath::fabs(geometry::vol::metadata->transf.ss_v3.y() - geometry::vol::metadata->transf.ss_v0.y()));
 
                                 // Clip quad-width/height to screen area
-                                u16 quadWidth = static_cast<u16>(vmath::fmin(qWidth, ui::window_width));
-                                u16 quadHeight = static_cast<u16>(vmath::fmin(qHeight, ui::window_height));
+                                u16 quadWidth = vmath::min(u16(qWidth), ui::window_width);
+                                u16 quadHeight = vmath::min(u16(qHeight), ui::window_height);
 
                                 // Clip tile bounds to screen area
                                 float quadMinX = vmath::clamp(geometry::vol::metadata->transf.ss_v0.x(), 0.0f, static_cast<float>(ui::window_width));
