@@ -603,6 +603,12 @@ export namespace vmath
 		return (a * gauss) - d;
 	}
 
+	template<std::integral xtype>
+	xtype abs(xtype x)
+	{
+		return std::abs(x);
+	}
+
 	float fabs(float a);
 	m3 normalSpace(vec<3> n)
 	{

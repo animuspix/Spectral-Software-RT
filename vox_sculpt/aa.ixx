@@ -4,8 +4,8 @@ import vox_ints;
 
 export namespace aa
 {
-	constexpr u32 samples_x = 4;
-	constexpr u32 samples_y = 4;
+	constexpr u32 samples_x = 8;
+	constexpr u32 samples_y = 8;
 	constexpr u32 max_samples = samples_x * samples_y;
 	float blackman_harris_weight(vmath::vec<2> sample_xy)
 	{
@@ -22,11 +22,12 @@ export namespace aa
 		const vmath::vec<2> alph3 = vmath::vec<2>(0.01168f);
 
 		// Core Blackman-Harris filter function
-		vmath::vec<2> ratio = vmath::vec<2>(vmath::pi * sample_xy) / float(max_samples - 1);
-		vmath::vec<2> filtv = alph0 - (alph1 * vmath::cos(2.0f * ratio)) +
-									  (alph2 * vmath::cos(4.0f * ratio)) -
-									  (alph3 * vmath::cos(6.0f * ratio));
-		return (filtv.x() * filtv.y());
+		vmath::vec<2> ratio = vmath::vec<2>(vmath::pi * sample_xy) / vmath::vec<2>(aa::samples_x, aa::samples_y);
+		vmath::vec<2> filtv =
+			alph0 - (alph1 * vmath::cos(2 * ratio)) +
+			(alph2 * vmath::cos(4.0f * ratio)) -
+			(alph3 * vmath::cos(6.0f * ratio));
+		return (filtv.x() + filtv.y());
 	}
 	vmath::vec<2> supersample(float film_x, float film_y)
 	{
