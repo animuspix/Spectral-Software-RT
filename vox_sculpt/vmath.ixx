@@ -18,25 +18,18 @@ export namespace vmath
 	constexpr float pi_2 = 2.0f * pi;
 	constexpr float eps = 0.000001f;
 
-	// Constraint for supported vector element types
-	// No support for vectors of vectors (tensors?) yet - I'll add them once I need them
-	template<typename numeric_t>
-	concept vec_elt_type = std::is_floating_point_v<numeric_t> ||
-		std::is_integral_v<numeric_t>;
-
 	// Linear algebra classes
-	template<int dim, vec_elt_type type = float> requires (dim < 5 && dim > 1)
+	template<int dim> requires (dim < 5 && dim > 1)
 		struct vec
 	{
-		using vec_type = type;
-		vec<dim, type>()
+		vec<dim>()
 		{
 			for (int i = 0; i < dim; i++)
 			{
 				e[i] = 0;
 			}
 		}
-		vec<dim, type>(type _x)
+		vec<dim>(float _x)
 		{
 			// Valid for all dimensions - behaves like a broadcast
 			for (int i = 0; i < dim; i++)
@@ -44,20 +37,20 @@ export namespace vmath
 				e[i] = _x;
 			}
 		}
-		vec<dim, type>(type _x, type _y)
+		vec<dim>(float _x, float _y)
 		{
 			static_assert(dim == 2, "two-dimensional constructor used with higher-dimensional vector");
 			e[0] = _x;
 			e[1] = _y;
 		}
-		vec<dim, type>(type _x, type _y, type _z)
+		vec<dim>(float _x, float _y, float _z)
 		{
 			static_assert(dim == 3, "three-dimensional constructor used with differently-dimensional vector");
 			e[0] = _x;
 			e[1] = _y;
 			e[2] = _z;
 		}
-		vec<dim, type>(type _x, type _y, type _z, type _w)
+		vec<dim>(float _x, float _y, float _z, float _w)
 		{
 			static_assert(dim == 4, "four-dimensional constructor used with lower-dimensional vector");
 			e[0] = _x;
@@ -65,8 +58,8 @@ export namespace vmath
 			e[2] = _z;
 			e[3] = _w;
 		}
-		type e[dim] = {};
-		float dot(vec<dim, type> u)
+		float e[dim] = {};
+		float dot(vec<dim> u)
 		{
 			float ret = 0;
 			for (int i = 0; i < dim; i++)
@@ -75,7 +68,7 @@ export namespace vmath
 			}
 			return ret;
 		}
-		vec<3, type> cross(vec<3, type> u)
+		vec<3> cross(vec<3> u)
 		{
 			static_assert(dim == 3, "The cross product is only meaningful in three dimensions - the wedge product is interesting & more general but i haven't found a use-case for it here yet");
 			vec<3> leftMuls(e[1] * u.e[2],
@@ -90,7 +83,7 @@ export namespace vmath
 		}
 
 		// Need to refresh my memory of how this math works...
-		vec<4, type> qtn_rotation_concat(vec<4, type> q)
+		vec<4> qtn_rotation_concat(vec<4> q)
 		{
 			static_assert(dim == 4, "Quaternionic vectors must have four axes");
 			//platform::osAssertion(q.sqr_magnitude() == 1.0f && sqr_magnitude() == 1.0f); // Rotation quaternions should have unit magnitude
@@ -104,7 +97,7 @@ export namespace vmath
 			return vec<4>(u.x(), u.y(), u.z(),
 				(w() * q.w()) - v.dot(q.xyz()));
 		}
-		vec<3, type> qtn_rotation_apply(vec<4, type> q)
+		vec<3> qtn_rotation_apply(vec<4> q)
 		{
 			static_assert(dim == 3, "This function is for applying quaternionic rotations to 3D vectors - 2D vectors can be rotated with regular sin/cos, and quaternion rotations can be concatenated using [qtn_rotation_concat] (see above)");
 			//platform::osAssertion(q.sqr_magnitude() == 1.0f); // Rotation quaternions should have unit magnitude
@@ -115,69 +108,69 @@ export namespace vmath
 				qv.z() * -1.0f, q.w());
 			return qv.qtn_rotation_concat(q_inv).xyz();
 		}
-		const type sqr_magnitude() const
+		const float sqr_magnitude() const
 		{
-			type acc = 0;
+			float acc = 0;
 			for (int i = 0; i < dim; i++)
 			{
 				acc += e[i] * e[i];
 			}
 			return acc;
 		}
-		const type magnitude() const
+		const float magnitude() const
 		{
-			type acc = 0;
+			float acc = 0;
 			for (int i = 0; i < dim; i++)
 			{
 				acc += e[i] * e[i];
 			}
-			return static_cast<type>(sqrt(float(acc))); // May lose accuracy for integer vectors
+			return static_cast<float>(sqrt(acc));
 		}
-		vec<dim, type> normalized() const
+		vec<dim> normalized() const
 		{
-			type len = magnitude();
+			float len = magnitude();
 			vec<dim> d = *this;
-			for (int i = 0; i < dim; i++) d.e[i] /= len; // May lose accuracy for integer vectors
+			for (int i = 0; i < dim; i++) d.e[i] /= len;
 			return d;
 		}
-		const type x() const
+		const float x() const
 		{
 			return e[0];
 		}
-		const type y() const
+		const float y() const
 		{
 			return e[1];
 		}
-		const type z() const
+		const float z() const
 		{
 			static_assert(dim >= 3, "no z-coordinate available");
 			return e[2];
 		}
-		const type w() const
+		const float w() const
 		{
 			static_assert(dim == 4, "no w-coordinate available");
 			return e[3];
 		}
-		const vec<2, type> xy() const
+		const vec<2> xy() const
 		{
-			return vec<2, type>(e[0], e[1]);
+			return vec<2>(e[0], e[1]);
 		}
-		const vec<2, type> xz() const
+		const vec<2> xz() const
 		{
 			static_assert(dim >= 3, "no z-coordinate available");
 			return vec<2>(e[0], e[2]);
 		}
-		const vec<2, type> zw() const
+		const vec<2> zw() const
 		{
 			static_assert(dim == 4, "no w-coordinate available");
 			return vec<2>(e[2], e[3]);
 		}
-		const vec<2, type> yw() const
+		const vec<2> yw() const
 		{
 			static_assert(dim == 4, "no w-coordinate available");
 			return vec<2>(e[1], e[3]);
 		}
-		const vec<3, type> xyz() const
+		const vec<3> xyz() const
 		{
 			static_assert(dim >= 3, "Not enough components for XYZ swizzle");
 			return vec<3>(e[0], e[1], e[2]);
@@ -224,270 +217,165 @@ export namespace vmath
 		}
 	};
 
-	// Type constraints for vox_sculpt maths functions
-	template<typename vector_t>
-	concept vec2_type_fp = std::is_same_v<vector_t, vec<2, float>> ||
-		std::is_same_v<vector_t, vec<2, double>>;
-
-	template<typename vector_t>
-	concept vec3_type_fp = std::is_same_v<vector_t, vec<3, float>> ||
-		std::is_same_v<vector_t, vec<3, double>>;
-
-	template<typename vector_t>
-	concept vec4_type_fp = std::is_same_v<vector_t, vec<4, float>> ||
-		std::is_same_v<vector_t, vec<4, double>>;
-
-	template<typename vector_t>
-	concept vec2_type_integral = std::is_same_v<vector_t, vec<2, uint8_t>> ||
-		std::is_same_v<vector_t, vec<2, uint16_t>> ||
-		std::is_same_v<vector_t, vec<2, uint32_t>> ||
-		std::is_same_v<vector_t, vec<2, uint64_t>> ||
-		std::is_same_v<vector_t, vec<2, int8_t>> ||
-		std::is_same_v<vector_t, vec<2, int16_t>> ||
-		std::is_same_v<vector_t, vec<2, int32_t>> ||
-		std::is_same_v<vector_t, vec<2, int64_t>>;
-
-	template<typename vector_t>
-	concept vec3_type_integral = std::is_same_v<vector_t, vec<3, uint8_t>> ||
-		std::is_same_v<vector_t, vec<3, uint16_t>> ||
-		std::is_same_v<vector_t, vec<3, uint32_t>> ||
-		std::is_same_v<vector_t, vec<3, uint64_t>> ||
-		std::is_same_v<vector_t, vec<3, int8_t>> ||
-		std::is_same_v<vector_t, vec<3, int16_t>> ||
-		std::is_same_v<vector_t, vec<3, int32_t>> ||
-		std::is_same_v<vector_t, vec<3, int64_t>>;
-
-	template<typename vector_t>
-	concept vec4_type_integral = std::is_same_v<vector_t, vec<4, uint8_t>> ||
-		std::is_same_v<vector_t, vec<4, uint16_t>> ||
-		std::is_same_v<vector_t, vec<4, uint32_t>> ||
-		std::is_same_v<vector_t, vec<4, uint64_t>> ||
-		std::is_same_v<vector_t, vec<4, int8_t>> ||
-		std::is_same_v<vector_t, vec<4, int16_t>> ||
-		std::is_same_v<vector_t, vec<4, int32_t>> ||
-		std::is_same_v<vector_t, vec<4, int64_t>>;
-
-	template<typename vector_t>
-	concept vec2_type = vec2_type_fp<vector_t> || vec2_type_integral<vector_t>;
-
-	template<typename vector_t>
-	concept vec3_type = vec3_type_fp<vector_t> || vec3_type_integral<vector_t>;
-
-	template<typename vector_t>
-	concept vec4_type = vec4_type_fp<vector_t> || vec4_type_integral<vector_t>;
-
-	template <typename scalar_numeric_t>
-	concept scalar_maths_type = std::is_floating_point_v<scalar_numeric_t> ||
-		std::is_integral_v<scalar_numeric_t>;
-
+	// Type constraint for vox_sculpt maths functions
 	template<typename numeric_t>
 	concept maths_type = std::is_floating_point_v<numeric_t> ||
-		std::is_integral_v<numeric_t> ||
-		vec2_type<numeric_t> ||
-		vec3_type<numeric_t> ||
-		vec4_type<numeric_t>;
-
-	template<typename numeric_t>
-	concept maths_type_fp = std::is_floating_point_v<numeric_t> ||
-		vec2_type_fp<numeric_t> ||
-		vec3_type_fp<numeric_t> ||
-		vec4_type_fp<numeric_t>;
-
-	template<typename numeric_t>
-	concept maths_type_integral = std::is_integral_v<numeric_t> ||
-		vec2_type_integral<numeric_t> ||
-		vec3_type_integral<numeric_t> ||
-		vec4_type_integral<numeric_t>;
+		std::is_same_v<numeric_t, vec<2>> ||
+		std::is_same_v<numeric_t, vec<3>> ||
+		std::is_same_v<numeric_t, vec<4>>;
 
 	// Linear algebra operators
 	// 3D
-	template<vec3_type vec3>
-	const vec3 operator+(vec3 lhs, vec3 rhs)
+	const vec<3> operator+(vec<3> lhs, vec<3> rhs)
 	{
-		return vec3(lhs.e[0] + rhs.e[0],
+		return vec<3>(lhs.e[0] + rhs.e[0],
 			lhs.e[1] + rhs.e[1],
 			lhs.e[2] + rhs.e[2]);
 	}
 
-	template<vec3_type vec3>
-	const vec3 operator+=(vec3& lhs, vec3 rhs)
+	const vec<3> operator+=(vec<3>& lhs, vec<3> rhs)
 	{
-		lhs = vec3(lhs.e[0] + rhs.e[0],
+		lhs = vec<3>(lhs.e[0] + rhs.e[0],
 			lhs.e[1] + rhs.e[1],
 			lhs.e[2] + rhs.e[2]);
 		return lhs;
 	}
 
-	template<vec3_type vec3>
-	const vec3 operator-(vec3 lhs, vec3 rhs)
+	const vec<3> operator-(vec<3> lhs, vec<3> rhs)
 	{
-		return vec3(lhs.e[0] - rhs.e[0],
+		return vec<3>(lhs.e[0] - rhs.e[0],
 			lhs.e[1] - rhs.e[1],
 			lhs.e[2] - rhs.e[2]);
 	}
-	template<vec3_type vec3>
-	const vec3 operator-=(vec3& lhs, vec3 rhs)
+	const vec<3> operator-=(vec<3>& lhs, vec<3> rhs)
 	{
 		lhs = lhs - rhs;
 		return lhs;
 	}
-	template<vec3_type vec3>
-	const vec3 operator*(vec3 lhs, vec3 rhs)
+	const vec<3> operator*(vec<3> lhs, vec<3> rhs)
 	{
-		return vec3(lhs.e[0] * rhs.e[0],
+		return vec<3>(lhs.e[0] * rhs.e[0],
 			lhs.e[1] * rhs.e[1],
 			lhs.e[2] * rhs.e[2]);
 	}
-	template<vec3_type vec3>
-	const vec3 operator*=(vec3& lhs, vec3 rhs)
+	const vec<3> operator*=(vec<3>& lhs, vec<3> rhs)
 	{
 		lhs = lhs * rhs;
 		return lhs;
 	}
 
-	template<vec3_type vec3>
-	const vec3 operator*(vec3 lhs, float rhs)
+	const vec<3> operator*(vec<3> lhs, float rhs)
 	{
-		return vec3(lhs.e[0] * rhs,
+		return vec<3>(lhs.e[0] * rhs,
 			lhs.e[1] * rhs,
 			lhs.e[2] * rhs);
 	}
 
-	template<vec3_type vec3>
-	const vec3 operator*(float lhs, vec3 rhs)
-	{
-		return vec3(rhs.e[0] * lhs,
-			rhs.e[1] * lhs,
-			rhs.e[2] * lhs);
-	}
-
-	template<vec3_type vec3>
-	const vec3 operator*=(vec3& lhs, float rhs)
+	const vec<3> operator*=(vec<3>& lhs, float rhs)
 	{
 		lhs = lhs * rhs;
 		return lhs;
 	}
 
-	template<vec3_type vec3>
-	const vec3 operator/(vec3 lhs, vec3 rhs)
+	const vec<3> operator/(vec<3> lhs, vec<3> rhs)
 	{
-		return vec3(lhs.e[0] / rhs.e[0],
+		return vec<3>(lhs.e[0] / rhs.e[0],
 			lhs.e[1] / rhs.e[1],
 			lhs.e[2] / rhs.e[2]);
 	}
 
-	template<vec3_type vec3>
-	const vec3 operator/=(vec3& lhs, vec3 rhs)
+	const vec<3> operator/=(vec<3>& lhs, vec<3> rhs)
 	{
 		lhs = lhs / rhs;
 		return lhs;
 	}
 
-	template<vec3_type vec3>
-	const vec3 operator/(vec3 lhs, float rhs)
+	const vec<3> operator/(vec<3> lhs, float rhs)
 	{
-		return vec3(lhs.e[0] / rhs,
+		return vec<3>(lhs.e[0] / rhs,
 			lhs.e[1] / rhs,
 			lhs.e[2] / rhs);
 	}
 
-	template<vec3_type vec3>
-	const vec3 operator/=(vec3& lhs, float rhs)
+	const vec<3> operator/=(vec<3>& lhs, float rhs)
 	{
 		lhs = lhs / rhs;
 		return lhs;
 	}
 
-	template<vec3_type vec3>
-	const bool anyGreaterElements(vec3 lhs, vec3 rhs)
+	const bool anyGreater(vec<3> lhs, vec<3> rhs)
 	{
 		return lhs.e[0] > rhs.e[0] ||
 			lhs.e[1] > rhs.e[1] ||
 			lhs.e[2] > rhs.e[2];
 	}
 
-	template<vec3_type vec3>
-	const bool anyLesserElements(vec3 lhs, vec3 rhs)
+	const bool anyLesser(vec<3> lhs, vec<3> rhs)
 	{
 		return lhs.e[0] < rhs.e[0] ||
 			lhs.e[1] < rhs.e[1] ||
 			lhs.e[2] < rhs.e[2];
 	}
 
-	template<vec3_type vec3>
-	const bool anyEqualElements(vec3 lhs, vec3 rhs)
+	const bool anyEqual(vec<3> lhs, vec<3> rhs)
 	{
 		return lhs.e[0] == rhs.e[0] ||
 			lhs.e[1] == rhs.e[1] ||
 			lhs.e[2] == rhs.e[2];
 	}
 
-	template<vec3_type vec3>
-	const bool allGreaterElements(vec3 lhs, vec3 rhs)
+	const bool allGreater(vec<3> lhs, vec<3> rhs)
 	{
 		return lhs.e[0] > rhs.e[0] &&
 			lhs.e[1] > rhs.e[1] &&
 			lhs.e[2] > rhs.e[2];
 	}
 
-	template<vec3_type vec3>
-	const bool allLesserElements(vec3 lhs, vec3 rhs)
+	const bool allLesser(vec<3> lhs, vec<3> rhs)
 	{
 		return lhs.e[0] < rhs.e[0] &&
 			lhs.e[1] < rhs.e[1] &&
 			lhs.e[2] < rhs.e[2];
 	}
 
-	template<vec3_type vec3>
-	const bool allEqualElements(vec3 lhs, vec3 rhs)
+	const bool allEqual(vec<3> lhs, vec<3> rhs)
 	{
 		return lhs.e[0] == rhs.e[0] &&
 			lhs.e[1] == rhs.e[1] &&
 			lhs.e[2] == rhs.e[2];
 	}
 
-	template<vec3_type vec3, typename scalar>
-	const bool anyGreater(vec3 lhs, scalar rhs)
+	const bool anyGreater(vec<3> lhs, float rhs)
 	{
 		return lhs.e[0] > rhs ||
 			lhs.e[1] > rhs ||
 			lhs.e[2] > rhs;
 	}
-
-	template<vec3_type vec3, scalar_maths_type scalar>
-	const bool anyLesser(vec3 lhs, scalar rhs)
+	const bool anyLesser(vec<3> lhs, float rhs)
 	{
 		return lhs.e[0] < rhs ||
 			lhs.e[1] < rhs ||
 			lhs.e[2] < rhs;
 	}
-
-	template<vec3_type vec3, scalar_maths_type scalar>
-	const bool anyEqual(vec3 lhs, scalar rhs)
+	const bool anyEqual(vec<3> lhs, float rhs)
 	{
 		return lhs.e[0] == rhs ||
 			lhs.e[1] == rhs ||
 			lhs.e[2] == rhs;
 	}
-
-	template<vec3_type vec3, scalar_maths_type scalar>
-	const bool allGreater(vec3 lhs, scalar rhs)
+	const bool allGreater(vec<3> lhs, float rhs)
 	{
 		return lhs.e[0] > rhs &&
 			lhs.e[1] > rhs &&
 			lhs.e[2] > rhs;
 	}
-
-	template<vec3_type vec3, scalar_maths_type scalar>
-	const bool allLesser(vec3 lhs, scalar rhs)
+	const bool allLesser(vec<3> lhs, float rhs)
 	{
 		return lhs.e[0] < rhs &&
 			lhs.e[1] < rhs &&
 			lhs.e[2] < rhs;
 	}
-
-	template<vec3_type vec3, scalar_maths_type scalar>
-	const bool allEqual(vec3 lhs, scalar rhs)
+	const bool allEqual(vec<3> lhs, float rhs)
 	{
 		return lhs.e[0] == rhs &&
 			lhs.e[1] == rhs &&
@@ -495,229 +383,181 @@ export namespace vmath
 	}
 
 	// 2D
-	template<vec2_type vec2>
-	const vec2 operator+(vec2 lhs, vec2 rhs)
+	const vec<2> operator+(vec<2> lhs, vec<2> rhs)
 	{
-		return vec2(lhs.e[0] + rhs.e[0],
+		return vec<2>(lhs.e[0] + rhs.e[0],
 			lhs.e[1] + rhs.e[1]);
 	}
 
-	template<vec2_type vec2>
-	const vec2 operator+=(vec2& lhs, vec2 rhs)
+	const vec<2> operator+=(vec<2>& lhs, vec<2> rhs)
 	{
-		lhs = vec2(lhs.e[0] + rhs.e[0],
+		lhs = vec<2>(lhs.e[0] + rhs.e[0],
 			lhs.e[1] + rhs.e[1]);
 		return lhs;
 	}
 
-	template<vec2_type vec2>
-	const vec2 operator-(vec2 lhs, vec2 rhs)
+	const vec<2> operator-(vec<2> lhs, vec<2> rhs)
 	{
-		return vec2(lhs.e[0] - rhs.e[0],
+		return vec<2>(lhs.e[0] - rhs.e[0],
 			lhs.e[1] - rhs.e[1]);
 	}
-
-	template<vec2_type vec2>
-	const vec2 operator-=(vec2& lhs, vec2 rhs)
+	const vec<2> operator-=(vec<2>& lhs, vec<2> rhs)
 	{
 		lhs = lhs - rhs;
 		return lhs;
 	}
-
-	template<vec2_type vec2>
-	const vec2 operator*(vec2 lhs, vec2 rhs)
+	const vec<2> operator*(vec<2> lhs, vec<2> rhs)
 	{
-		return vec2(lhs.e[0] * rhs.e[0],
+		return vec<2>(lhs.e[0] * rhs.e[0],
 			lhs.e[1] * rhs.e[1]);
 	}
-
-	template<vec2_type vec2>
-	const vec2 operator*=(vec2& lhs, vec2 rhs)
+	const vec<2> operator*=(vec<2>& lhs, vec<2> rhs)
 	{
 		lhs = lhs * rhs;
 		return lhs;
 	}
 
-	template<vec2_type vec2>
-	const vec2 operator*(vec2 lhs, float rhs)
+	const vec<2> operator*(vec<2> lhs, float rhs)
 	{
-		return vec2(lhs.e[0] * rhs,
+		return vec<2>(lhs.e[0] * rhs,
 			lhs.e[1] * rhs);
 	}
 
-	template<vec2_type vec2>
-	const vec2 operator*(float lhs, vec2 rhs)
-	{
-		return vec2(rhs.e[0] * lhs,
-			rhs.e[1] * lhs);
-	}
-
-	template<vec2_type vec2>
-	const vec2 operator*=(vec2& lhs, float rhs)
+	const vec<2> operator*=(vec<2>& lhs, float rhs)
 	{
 		lhs = lhs * rhs;
 		return lhs;
 	}
 
-	template<vec2_type vec2>
-	const vec2 operator/(vec2 lhs, vec2 rhs)
+	const vec<2> operator/(vec<2> lhs, vec<2> rhs)
 	{
-		return vec2(lhs.e[0] / rhs.e[0],
+		return vec<2>(lhs.e[0] / rhs.e[0],
 			lhs.e[1] / rhs.e[1]);
 	}
 
-	template<vec2_type vec2>
-	const vec2 operator/=(vec2& lhs, vec2 rhs)
+	const vec<2> operator/=(vec<2>& lhs, vec<2> rhs)
 	{
 		lhs = lhs / rhs;
 		return lhs;
 	}
 
-	template<vec2_type vec2>
-	const vec2 operator/(vec2 lhs, float rhs)
+	const vec<2> operator/(vec<2> lhs, float rhs)
 	{
-		return vec2(lhs.e[0] / rhs,
+		return vec<2>(lhs.e[0] / rhs,
 			lhs.e[1] / rhs);
 	}
 
-	template<vec2_type vec2>
-	const vec2 operator/=(vec2& lhs, float rhs)
+	const vec<2> operator/=(vec<2>& lhs, float rhs)
 	{
 		lhs = lhs / rhs;
 		return lhs;
 	}
 
-	template<vec2_type vec2>
-	const bool anyGreater(vec2 lhs, vec2 rhs)
+	const bool anyGreater(vec<2> lhs, vec<2> rhs)
 	{
 		return lhs.e[0] > rhs.e[0] ||
 			lhs.e[1] > rhs.e[1];
 	}
 
-	template<vec2_type vec2>
-	const bool anyLesser(vec2 lhs, vec2 rhs)
+	const bool anyLesser(vec<2> lhs, vec<2> rhs)
 	{
 		return lhs.e[0] < rhs.e[0] ||
 			lhs.e[1] < rhs.e[1];
 	}
 
-	template<vec2_type vec2>
-	const bool anyEqual(vec2 lhs, vec2 rhs)
+	const bool anyEqual(vec<2> lhs, vec<2> rhs)
 	{
 		return lhs.e[0] == rhs.e[0] ||
 			lhs.e[1] == rhs.e[1];
 	}
 
-	template<vec2_type vec2>
-	const bool allGreater(vec2 lhs, vec2 rhs)
+	const bool allGreater(vec<2> lhs, vec<2> rhs)
 	{
 		return lhs.e[0] > rhs.e[0] &&
 			lhs.e[1] > rhs.e[1];
 	}
 
-	template<vec2_type vec2>
-	const bool allLesser(vec2 lhs, vec2 rhs)
+	const bool allLesser(vec<2> lhs, vec<2> rhs)
 	{
 		return lhs.e[0] < rhs.e[0] &&
 			lhs.e[1] < rhs.e[1];
 	}
 
-	template<vec2_type vec2>
-	const bool allEqual(vec2 lhs, vec2 rhs)
+	const bool allEqual(vec<2> lhs, vec<2> rhs)
 	{
 		return lhs.e[0] == rhs.e[0] &&
 			lhs.e[1] == rhs.e[1];
 	}
 
-	template<vec2_type vec2>
-	const bool anyGreater(vec2 lhs, float rhs)
+	const bool anyGreater(vec<2> lhs, float rhs)
 	{
 		return lhs.e[0] > rhs &&
 			lhs.e[1] > rhs;
 	}
-
-	template<vec2_type vec2>
-	const bool anyLesser(vec2 lhs, float rhs)
+	const bool anyLesser(vec<2> lhs, float rhs)
 	{
 		return lhs.e[0] < rhs &&
 			lhs.e[1] < rhs;
 	}
-
-	template<vec2_type vec2>
-	const bool anyEqual(vec2 lhs, float rhs)
+	const bool anyEqual(vec<2> lhs, float rhs)
 	{
 		return lhs.e[0] == rhs &&
 			lhs.e[1] == rhs;
 	}
-
-	template<vec2_type vec2>
-	const bool allGreater(vec2 lhs, float rhs)
+	const bool allGreater(vec<2> lhs, float rhs)
 	{
 		return lhs.e[0] > rhs &&
 			lhs.e[1] > rhs;
 	}
-
-	template<vec2_type vec2>
-	const bool allLesser(vec2 lhs, float rhs)
+	const bool allLesser(vec<2> lhs, float rhs)
 	{
 		return lhs.e[0] < rhs &&
 			lhs.e[1] < rhs;
 	}
-
-	template<vec2_type vec2>
-	const bool allEqual(vec2 lhs, float rhs)
+	const bool allEqual(vec<2> lhs, float rhs)
 	{
 		return lhs.e[0] == rhs &&
 			lhs.e[1] == rhs;
 	}
 
 	float fsin(float a);
-
-	template<vec2_type_fp vec2>
-	vec2 sin(vec2 v)
+	vec<2> sin(vec<2> v)
 	{
-		return vec2(fsin(v.x()),
+		return vec<2>(fsin(v.x()),
 			fsin(v.y()));
 	}
 
-	template<vec3_type_fp vec3>
-	vec3 sin(vec3 v)
+	vec<3> sin(vec<3> v)
 	{
-		return vec3(fsin(v.x()),
+		return vec<3>(fsin(v.x()),
 			fsin(v.y()),
 			fsin(v.z()));
 	}
 
 	float fcos(float a);
-
-	template<vec2_type_fp vec2>
-	vec2 cos(vec2 v)
+	vec<2> cos(vec<2> v)
 	{
-		return vec2(fcos(v.x()),
+		return vec<2>(fcos(v.x()),
 			fcos(v.y()));
 	}
 
-	template<vec3_type_fp vec3>
-	vec3 cos(vec3 v)
+	vec<3> cos(vec<3> v)
 	{
-		return vec3(fcos(v.x()),
+		return vec<3>(fcos(v.x()),
 			fcos(v.y()),
 			fcos(v.z()));
 	}
 
 	float ftan(float a);
-
-	template<vec2_type_fp vec2>
-	vec2 tan(vec2 v)
+	vec<2> tan(vec<2> v)
 	{
-		return vec2(ftan(v.x()),
+		return vec<2>(ftan(v.x()),
 			ftan(v.y()));
 	}
 
-	template<vec3_type_fp vec3>
-	vec3 tan(vec3 v)
+	vec<3> tan(vec<3> v)
 	{
-		return vec3(ftan(v.x()),
+		return vec<3>(ftan(v.x()),
 			ftan(v.y()),
 			ftan(v.z()));
 	}
@@ -793,78 +633,74 @@ export namespace vmath
 	}
 
 	float ffloor(float f);
-
-	template<vec3_type_fp vec3>
-	vec3 vfloor(vec3 v) // Integer vectors are floored by nature
+	vec<3> vfloor(vec<3> v)
 	{
-		return vec3(ffloor(v.e[0]),
+		return vec<3>(ffloor(v.e[0]),
 			ffloor(v.e[1]),
 			ffloor(v.e[2]));
 	}
 
 	float ffrac(float f);
-
-	template<vec3_type_fp vec3>
-	vec3 vfrac(vec3 v)
+	vec<3> vfrac(vec<3> v)
 	{
-		return vec3(ffrac(v.e[0]),
+		return vec<3>(ffrac(v.e[0]),
 			ffrac(v.e[1]),
 			ffrac(v.e[2]));
 	}
 
 	float fceil(float f);
-
-	template<vec3_type_fp vec3>
-	vec3 vceil(vec3 v)
+	vec<3> vceil(vec<3> v)
 	{
-		return vec3(fceil(v.e[0]),
+		return vec<3>(fceil(v.e[0]),
 			fceil(v.e[1]),
 			fceil(v.e[2]));
 	}
 
-	template<maths_type_fp lerp_type>
+	template<maths_type lerp_type>
 	lerp_type lerp(lerp_type a, lerp_type b, lerp_type t) // Because I keep forgetting how these work: https://en.wikipedia.org/wiki/Linear_interpolation
 	{
 		return a + t * (a - b);
 	}
 
-	template<typename argType> requires (std::is_integral_v<argType> || std::is_floating_point_v<argType>)
-		argType max(argType a, argType b)
+	float fmax(float a, float b)
 	{
 		return a > b ? a : b;
 	}
-
-	template<typename argType> requires (std::is_integral_v<argType> || std::is_floating_point_v<argType>)
-		argType min(argType a, argType b)
+	float fmin(float a, float b)
+	{
+		return a > b ? b : a;
+	}
+	unsigned int umax(unsigned int a, unsigned int b)
+	{
+		return a > b ? a : b;
+	}
+	unsigned int umin(unsigned int a, unsigned int b)
 	{
 		return a > b ? b : a;
 	}
 
-	template<vec3_type vec3>
-	vec3 vmax(vec3 v, vec3 u)
+	vec<3> vmax(vec<3> v, vec<3> u)
 	{
-		return vec3(max(v.e[0], u.e[0]),
-			max(v.e[1], u.e[1]),
-			max(v.e[2], u.e[2]));
+		return vec<3>(fmax(v.e[0], u.e[0]),
+			fmax(v.e[1], u.e[1]),
+			fmax(v.e[2], u.e[2]));
 	}
 
-	template<vec3_type vec3>
-	vec3 vmin(vec3 v, vec3 u)
+	vec<3> vmin(vec<3> v, vec<3> u)
 	{
-		return vec3(min(v.e[0], u.e[0]),
-			min(v.e[1], u.e[1]),
-			min(v.e[2], u.e[2]));
+		return vec<3>(fmin(v.e[0], u.e[0]),
+			fmin(v.e[1], u.e[1]),
+			fmin(v.e[2], u.e[2]));
 	}
 
 	template<maths_type clamp_type>
 	clamp_type clamp(clamp_type a, clamp_type clampMin, clamp_type clampMax)
 	{
-		constexpr bool scalar = std::is_integral_v<clamp_type> || std::is_floating_point_v<clamp_type>;
-		if constexpr (scalar)
+		if constexpr (std::is_same<clamp_type, float>::value)
 		{
-			return min(max(a, clampMin), clampMax);
+			return fmin(fmax(a, clampMin), clampMax);
 		}
-		else if constexpr (!scalar)
+		else if constexpr (!std::is_same<clamp_type, float>::value)
 		{
 			return vmin(vmax(a, clampMin), clampMax);
 		}
@@ -872,108 +708,53 @@ export namespace vmath
 		return a; // Failure case; assert false & return the value unclamped
 	}
 
-	template<vec2_type_fp vec2>
-	vec2 vabs(vec2 v)
+	vec<2> vabs(vec<2> v)
 	{
-		return vec2(fabs(v.e[0]),
+		return vec<2>(fabs(v.e[0]),
 			fabs(v.e[1]));
 	}
 
-	template<vec3_type_fp vec3>
-	vec3 vabs(vec<3> v)
+	vec<3> vabs(vec<3> v)
 	{
-		return vec3(fabs(v.e[0]),
+		return vec<3>(fabs(v.e[0]),
 			fabs(v.e[1]),
 			fabs(v.e[2]));
 	}
 
-	template<vec2_type_integral vec2>
-	vec2 vabs(vec2 v)
-	{
-		return vec2(static_cast<uint64_t>(v.e[0]),
-			static_cast<uint64_t>(v.e[1]));
-	}
-
-	template<vec3_type_fp vec3>
-	vec3 vabs(vec3 v)
-	{
-		return vec3(static_cast<uint64_t>(v.e[0]),
-			static_cast<uint64_t>(v.e[1]),
-			static_cast<uint64_t>(v.e[2]));
-	}
-
 	float fmodf(float fval, float finterval);
-
-	template<vec3_type_fp vec3>
-	vec3 vmodf(vec3 u, vec<3> v)
+	vec<3> vmodf(vec<3> u, vec<3> v)
 	{
-		return vec3(fmodf(u.e[0], v.e[0]),
+		return vec<3>(fmodf(u.e[0], v.e[0]),
 			fmodf(u.e[1], v.e[1]),
 			fmodf(u.e[2], v.e[2]));
 	}
 
-	template<vec3_type_integral vec3>
-	vec3 vmod(vec3 u, vec3 v)
-	{
-		return vec3(u.e[0] % v.e[0],
-			u.e[1] % v.e[1],
-			u.e[2] % v.e[2]);
-	}
-
-	template<typename vec_elt_type> requires (std::is_integral_v<vec_elt_type>)
-		vec<3, vec_elt_type> vmod(vec<3, vec_elt_type> u, vec_elt_type modulus)
-	{
-		return vec<3, vec_elt_type>(u.e[0] % modulus,
-			u.e[1] % modulus,
-			u.e[2] % modulus);
-	}
-
 	float fsqrt(float fval);
-
-	template<vec3_type vec3>
-	vec3 vsqrt(vec<3> u)
+	vec<3> vsqrt(vec<3> u, vec<3> v)
 	{
-		// Calls on integer vectors will have implicit casts to float/double & back to integral type (any of u/i 8/16/32/64)
-		return vec3(fsqrt(u.e[0]),
+		return vec<3>(fsqrt(u.e[0]),
 			fsqrt(u.e[1]),
 			fsqrt(u.e[2]));
 	}
 
-	template<scalar_maths_type argType>
-	argType sgn(argType f)
+	float fsgn(float f)
 	{
-		const bool sgn = f < argType(0);
-		return static_cast<argType>(sgn ? -1 : 1);
+		unsigned int u = *reinterpret_cast<unsigned int*>(&f);
+		const bool bitset = u & (1 << 31);
+		return bitset ? -1.0f : 1.0f;
 	}
 
-	template<vec3_type vec3>
-	vec3 vsgn(vec3 v)
+	vec<3> vsgn(vec<3> v)
 	{
-		return vec3(sgn(v.x()),
-			sgn(v.y()),
-			sgn(v.z()));
+		return vec<3>(fsgn(v.x()),
+			fsgn(v.y()),
+			fsgn(v.z()));
 	}
 
-	template<typename num_type> requires(std::is_floating_point_v<num_type>)
-		bool eps_equality(num_type x, num_type y)
+	bool eps_equality(float x, float y)
 	{
 		return x >= (y - eps) &&
 			x <= (y + eps);
-	}
-
-	template<vec2_type type_in, vec2_type type_out>
-	type_out vec2_cast(type_in vec_in)
-	{
-		return type_out(vec_in.e[0],
-			vec_in.e[1]);
-	}
-
-	template<vec3_type type_in, vec3_type type_out>
-	type_out vec3_cast(type_in vec_in)
-	{
-		return type_out(vec_in.e[0],
-			vec_in.e[1],
-			vec_in.e[2]);
 	}
 
 	// Higher-level function object/functor; not super fancy but better than std::function (spooky hidden heap allocations) and more readable than c-style function pointers

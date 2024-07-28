@@ -99,7 +99,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
             if (dt < 30) present_interval++;
             else present_interval--;
-            present_interval = vmath::max(vmath::min(present_interval, u32(0x00f00000)), 2u);
+            present_interval = vmath::umax(vmath::umin(present_interval, 0x00f00000), 2u);
         }
 
         // Break & output render performance when timed ray-tracing is active
